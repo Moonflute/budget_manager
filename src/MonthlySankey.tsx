@@ -14,11 +14,11 @@ type ChartPart = { id: string; name: string; value: number; color: string };
 const chartRenderer = { renderer: 'svg' } as const;
 const colors = {
   income: '#2864c7',
-  expense: '#505f90',
-  saving: '#176f9e',
-  investment: '#4263b8',
-  cash: '#4d85b9',
-  deficit: '#a83247',
+  expense: '#c34553',
+  saving: '#168164',
+  investment: '#744cb5',
+  cash: '#68778a',
+  deficit: '#93364d',
 };
 
 function visibleItems(flows: Flow[], kind: 'income' | 'expense'): ChartPart[] {
@@ -158,7 +158,7 @@ export function MonthlySankey({ data }: { data: BudgetData }) {
   }, [example, flows, assets, events, importedExpenses, month]);
 
   return (
-    <section className="min-w-0 rounded-[14px] border border-solid border-[#dce5f1] bg-white px-3 py-3 sm:px-6 sm:py-5">
+    <>
       <header className="mb-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center">
         <div className="col-start-2 flex items-center" role="group" aria-label="표시 월">
           <button type="button" className="icon-button h-11! w-11!" aria-label="이전 달" onClick={() => setMonth(value => shiftMonth(value, -1))}>
@@ -185,6 +185,6 @@ export function MonthlySankey({ data }: { data: BudgetData }) {
           </div>
         )}
       </div>
-    </section>
+    </>
   );
 }

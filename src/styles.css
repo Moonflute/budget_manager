@@ -33,17 +33,15 @@
   gap: 4px;
 }
 
-.topbar-actions .topbar-shortcut {
-  width: 44px;
-  min-height: 44px;
+.topbar-actions .topbar-shortcut,
+.topbar-actions .topbar-input {
+  width: 35px;
+  min-height: 35px;
   padding: 0;
-  color: var(--primary);
 }
 
-.topbar-actions .topbar-input {
-  min-width: 72px;
-  min-height: 44px;
-  font-size: 13px;
+.topbar-actions .topbar-shortcut {
+  color: var(--primary);
 }
 
 .modal.page-panel {

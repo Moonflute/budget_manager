@@ -170,8 +170,8 @@ export default function App() {
                 </button>
               ))}
             </nav>
-            <button type="button" className="button primary topbar-input" disabled={busy} aria-label="입력" title="입력" aria-haspopup="dialog" onClick={() => add('flow')}>
-              <Plus size={17} aria-hidden="true" />입력
+            <button type="button" className="button primary topbar-input" disabled={busy} aria-label="입력" aria-haspopup="dialog" onClick={() => add('flow')}>
+              <Plus size={17} aria-hidden="true" />
             </button>
           </div>
         </div>
