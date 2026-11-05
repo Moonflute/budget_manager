@@ -6,7 +6,7 @@ import { TooltipComponent, type TooltipComponentOption } from 'echarts/component
 import { SVGRenderer } from 'echarts/renderers';
 import { GitFork } from 'lucide-react';
 import { MonthControl } from './components';
-import { compactMoney, currentMonth, exampleFlows, flowLabels, flowsForMonth, recordedFlowsForMonth, money, monthLabel, monthlyFlow, type BudgetData, type Flow, type FlowKind } from './model';
+import { compactMoney, currentMonth, exampleFlows, flowLabels, flowsForMonth, recordedFlowsForMonth, money, monthLabel, monthlyFlow, loanMonth, type BudgetData, type Flow } from './model';
 
 echarts.use([SankeyChart, TooltipComponent, SVGRenderer]);
 
@@ -20,22 +20,23 @@ const colors = {
   investment: '#744cb5',
   cash: '#68778a',
   deficit: '#93364d',
+  repayment: '#a86819',
 };
 
-function visibleItems(flows: Flow[], kind: 'income' | 'expense'): ChartPart[] {
+function visibleItems(flows: Flow[], kind: 'income' | 'expense', color = colors[kind], otherName = kind === 'income' ? '기타 수입' : '기타 지출'): ChartPart[] {
   const items = flows
     .filter(flow => flow.kind === kind && flow.amount > 0)
     .sort((a, b) => b.amount - a.amount);
   const visible = items.length > 3 ? items.slice(0, 2) : items;
   const parts = visible.map(item => ({
-    id: `${'month' in item ? 'event' : 'item'}:${item.id}`, name: item.name, value: item.amount, color: colors[kind],
+    id: `${'month' in item ? 'event' : 'item'}:${item.id}`, name: item.name, value: item.amount, color,
   }));
   if (items.length > visible.length) {
     parts.push({
-      id: `other:${kind}`,
-      name: kind === 'income' ? '기타 수입' : '기타 지출',
+      id: `other:${otherName}`,
+      name: otherName,
       value: items.slice(visible.length).reduce((sum, item) => sum + item.amount, 0),
-      color: colors[kind],
+      color,
     });
   }
   return parts;
@@ -60,7 +61,10 @@ function chartNode(part: ChartPart, depth: number, position: 'left' | 'right' | 
 
 function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>, expenseLabel: string) {
   const flow = monthlyFlow({ flows, assets });
-  if (!flow.income && !flow.expense && !flow.saving && !flow.investment) return null;
+  if (!flow.income && !flow.expense && !flow.saving && !flow.investment && !flow.repayment) return null;
+  const repayments: Flow[] = assets.filter(asset => asset.kind === 'debt' && asset.loan).map(asset => ({
+    id: `loan:${asset.id}`, name: asset.name, kind: 'expense', amount: loanMonth(asset.amount, asset.loan!).payment,
+  }));
   const deficit = Math.max(0, -flow.cash);
   const sources = visibleItems(flows, 'income');
   if (deficit) sources.push({ id: 'deficit', name: '부족액', value: deficit, color: colors.deficit });
@@ -81,6 +85,10 @@ function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>, 
         { id: 'saving', name: flowLabels.saving, value: flow.saving, color: colors.saving },
         { id: 'investment', name: flowLabels.investment, value: flow.investment, color: colors.investment },
       ].filter(part => part.value > 0),
+    },
+    {
+      id: 'repayments', name: '대출 상환', value: flow.repayment, color: colors.repayment,
+      items: visibleItems(repayments, 'expense', colors.repayment, '기타 상환'),
     },
   ].filter(branch => branch.value > 0);
   const remaining = flow.cash > 0 ? [{ id: 'cash', name: '남는 현금', value: flow.cash, color: colors.cash }] : [];
@@ -145,7 +153,7 @@ function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>, 
   };
 
   const description = [...sources, total, ...branches, ...destinations].map(part => `${part.name} ${money(part.value)}`).join(', ');
-  return { option, description };
+  return { option, description, minHeight: Math.max(340, Math.max(sources.length, destinations.length) * 44 + 78) };
 }
 
 export function MonthlySankey({ data, month, changeMonth }: { data: BudgetData; month: string; changeMonth: (month: string) => void }) {
@@ -163,6 +171,7 @@ export function MonthlySankey({ data, month, changeMonth }: { data: BudgetData; 
   const details = [
     ...displayedFlows,
     ...assets.filter(asset => asset.kind === 'investment' && asset.investment?.monthlyBuy).map(asset => ({ id: `asset:${asset.id}`, name: asset.name, kind: 'investment' as const, amount: asset.investment!.monthlyBuy })),
+    ...assets.filter(asset => asset.kind === 'debt' && asset.loan).map(asset => ({ id: `loan:${asset.id}`, name: asset.name, kind: 'repayment' as const, amount: loanMonth(asset.amount, asset.loan!).payment })),
   ];
 
   return (
@@ -174,10 +183,10 @@ export function MonthlySankey({ data, month, changeMonth }: { data: BudgetData; 
             <button type="button" aria-pressed={!recorded} onClick={() => setBasis('plan')}>계획</button>
             <button type="button" aria-pressed={recorded} onClick={() => setBasis('recorded')}>지출 기록</button>
           </div> : <span>{example ? '예시' : '계획'}</span>}
-          {recorded ? <small>수입·저축·투자는 계획 기준</small> : null}
+          {recorded ? <small>수입·저축·투자·상환은 계획 기준</small> : null}
         </div>
       </header>
-      <div className="h-[clamp(340px,calc(100svh_-_305px),440px)] w-full md:h-[clamp(410px,56vh,620px)]">
+      <div className="h-[clamp(340px,calc(100svh_-_305px),440px)] w-full md:h-[clamp(410px,56vh,620px)]" style={{ minHeight: chart?.minHeight }}>
         {chart ? (
           <div className="h-full" role="img" aria-label={`${monthLabel(month)} · ${chart.description}`}>
             <ReactEChartsCore echarts={echarts} option={chart.option} opts={chartRenderer} style={{ width: '100%', height: '100%' }} />
@@ -191,11 +200,11 @@ export function MonthlySankey({ data, month, changeMonth }: { data: BudgetData; 
       </div>
       {chart ? <details className="flow-details">
         <summary>항목별 금액</summary>
-        {(Object.keys(flowLabels) as FlowKind[]).map(kind => {
+        {Object.entries({ ...flowLabels, repayment: '대출 상환' }).map(([kind, label]) => {
           const items = details.filter(item => item.kind === kind && item.amount > 0);
           if (!items.length) return null;
           return <div className="flow-detail-group" key={kind}>
-            <h2>{flowLabels[kind]}</h2>
+            <h2>{label}</h2>
             <ul>{items.map(item => <li key={`${'month' in item ? 'event' : 'flow'}:${item.id}`}><span>{item.name}</span><strong>{money(item.amount)}</strong></li>)}</ul>
           </div>;
         })}

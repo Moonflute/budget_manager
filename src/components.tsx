@@ -57,6 +57,7 @@ export function TrendChart({ points, comparison, detailed = false, actual = fals
   const index = Math.min(selected ?? points.length - 1, points.length - 1);
   const p = points[index];
   const comparePoint = comparison?.[index];
+  const selectedPoint = comparePoint ?? p;
   const all = [...points, ...(comparison ?? [])].map(p => p.net);
   const maximum = Math.max(10_000, ...all);
   const minimum = Math.min(0, ...all);
@@ -83,7 +84,17 @@ export function TrendChart({ points, comparison, detailed = false, actual = fals
       {dateTicks.filter((v, i, arr) => arr.indexOf(v) === i).map(i => <text key={i} x={x(i)} y={h - 7} textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'} className="chart-label">{i === 0 && !actual ? '현재' : `${points[i].month.slice(2, 4)}년 ${Number(points[i].month.slice(5))}월`}</text>)}
     </svg>
     {detailed && points.length > 1 ? <label className="chart-scrubber"><span>{actual ? '기록 월 선택' : '예상 월 선택'}</span><input type="range" min="0" max={points.length - 1} value={index} onChange={e => setSelected(Number(e.target.value))} aria-label={actual ? '기록 월 선택' : '예상 월 선택'} /></label> : null}
-    {detailed ? <figcaption className="chart-detail"><div><span>{monthLabel(p.month)}{actual ? ' 기록' : ' 예상'}</span><strong>{money((comparePoint ?? p).net)}</strong></div><div><span>현금</span><b className={(comparePoint ?? p).cash < 0 ? 'negative' : ''}>{compactMoney((comparePoint ?? p).cash)}원</b></div><div><span>저축</span><b>{compactMoney((comparePoint ?? p).savings)}원</b></div><div><span>투자</span><b>{compactMoney((comparePoint ?? p).investment)}원</b></div></figcaption> : null}
+    {detailed ? <figcaption className="chart-detail">
+      <div><span>{monthLabel(p.month)}{actual ? ' 기록' : ' 예상'}</span><strong>{money(selectedPoint.net)}</strong></div>
+      <div><span>현금</span><b className={selectedPoint.cash < 0 ? 'negative' : ''}>{compactMoney(selectedPoint.cash)}원</b></div>
+      <div><span>저축</span><b>{compactMoney(selectedPoint.savings)}원</b></div>
+      <div><span>투자</span><b>{compactMoney(selectedPoint.investment)}원</b></div>
+      <div><span>부채</span><b>{compactMoney(selectedPoint.debt)}원</b></div>
+      {selectedPoint.loanPayment !== undefined ? <>
+        <div><span>해당 월 상환</span><b>{money(selectedPoint.loanPayment)}</b></div>
+        <div><span>해당 월 이자</span><b>{money(selectedPoint.loanInterest ?? 0)}</b></div>
+      </> : null}
+    </figcaption> : null}
   </figure>;
 }
 
@@ -119,15 +130,19 @@ export function EntryForm({ mode, entry, assets, save, remove, busy }: { mode: E
   const [account, setAccount] = useState<InvestmentAccount | ''>(existingInvestment?.account ?? '');
   const [buyFrequency, setBuyFrequency] = useState(existingInvestment?.monthlyBuy ? 'monthly' : 'none');
   const [buyAmount, setBuyAmount] = useState(existingInvestment?.monthlyBuy ? String(existingInvestment.monthlyBuy / 10_000) : '');
+  const existingLoan = 'loan' in entry ? entry.loan : undefined;
+  const [loanRate, setLoanRate] = useState(existingLoan ? String(existingLoan.annualRate) : '');
+  const [monthlyPayment, setMonthlyPayment] = useState(existingLoan ? String(existingLoan.monthlyPayment / 10_000) : '');
   const [error, setError] = useState('');
   const isSaving = mode === 'flow' && kind === 'saving';
   const isInstallment = isSaving && savingMethod === 'installment';
   const isInvestment = mode === 'asset' && kind === 'investment';
+  const isDebt = mode === 'asset' && kind === 'debt';
   const hasMonthlyBuy = isInvestment && buyFrequency === 'monthly';
   const isIrregularIncome = mode === 'event' && kind === 'income';
   const options = mode === 'asset' ? assetLabels : mode === 'flow' ? { ...flowLabels, income: '정기 수입' } : { expense: '예정 지출', income: '비정기 수입' };
   const amountLabel = {
-    asset: isInvestment ? '현재 평가액' : '현재 잔액',
+    asset: isInvestment ? '현재 평가액' : isDebt ? '남은 원금' : '현재 잔액',
     flow: isInstallment ? '월 납입액' : '매달 금액',
     event: isIrregularIncome ? '수입 금액' : '예정 금액',
   }[mode];
@@ -141,6 +156,7 @@ export function EntryForm({ mode, entry, assets, save, remove, busy }: { mode: E
         month,
         installment: isInstallment ? { termMonths, annualRate, startMonth, assetId } : undefined,
         investment: isInvestment ? { product, account, monthlyBuy: hasMonthlyBuy ? buyAmount : undefined } : undefined,
+        loan: isDebt ? { annualRate: loanRate, monthlyPayment } : undefined,
       }, entry.id);
       if (!await save(prepared)) setError('저장하지 못했어요.');
     } catch (problem) {
@@ -184,6 +200,10 @@ export function EntryForm({ mode, entry, assets, save, remove, busy }: { mode: E
         </div>
       ) : null}
       <AmountInput label={amountLabel} value={value} change={setValue} />
+      {isDebt ? <div className="form-grid">
+        <label>대출 연이율 (%)<input type="number" inputMode="decimal" min="0" max="100" step="any" required={!!monthlyPayment.trim()} value={loanRate} onChange={event => setLoanRate(event.target.value)} /></label>
+        <label>월 상환액 (만 원·원금+이자)<input type="number" inputMode="decimal" min="0" max={maxManWon} step="0.0001" required={!!loanRate.trim()} value={monthlyPayment} onChange={event => setMonthlyPayment(event.target.value)} /></label>
+      </div> : null}
       {isInvestment ? (
         <label>
           정기 매수

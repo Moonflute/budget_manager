@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { balances, demoData, emptyData, flowsForMonth, makeBackup, monthlyFlow, parseBackup, project, recentExpenseAverage, recordedFlowsForMonth, shiftMonth, takeSnapshot, validateData } from '../src/model';
+import { prepareEntry } from '../src/entryInput';
 
 function plan() {
   const data = emptyData();
@@ -164,5 +165,72 @@ describe('installment schedules and monthly spending', () => {
     expect(planned).toMatchObject({ income: 3_500_000, expense: 1_800_000 });
     expect(recorded).toMatchObject({ income: 3_500_000, expense: 20_000 });
     expect(recordedFlowsForMonth(data, '2026-11')).toEqual(flowsForMonth(data, '2026-11'));
+  });
+});
+
+describe('loan interest and repayments', () => {
+  it('reduces cash by the total payment and net worth only by interest', () => {
+    const data = emptyData();
+    data.assets = [
+      { id: 'cash', name: '현금', kind: 'cash', amount: 2_000_000 },
+      { id: 'loan', name: '대출', kind: 'debt', amount: 1_000_000, loan: { annualRate: 12, monthlyPayment: 100_000 } },
+    ];
+    const original = structuredClone(data);
+    expect(monthlyFlow(data)).toMatchObject({ expense: 0, repayment: 100_000, cash: -100_000 });
+    const points = project(data, 2, {}, '2026-11');
+    expect(points[1]).toMatchObject({ cash: 1_900_000, debt: 910_000, net: 990_000, loanPayment: 100_000, loanInterest: 10_000 });
+    expect(points[2]).toMatchObject({ cash: 1_800_000, debt: 819_100, net: 980_900, loanInterest: 9_100 });
+    expect(data).toEqual(original);
+  });
+
+  it('caps the final payment and stops after a zero-interest loan is paid off', () => {
+    const data = emptyData();
+    data.assets = [
+      { id: 'cash', name: '현금', kind: 'cash', amount: 1_000_000 },
+      { id: 'loan', name: '무이자', kind: 'debt', amount: 250_000, loan: { annualRate: 0, monthlyPayment: 100_000 } },
+    ];
+    const points = project(data, 5, {}, '2026-11');
+    expect(points[2]).toMatchObject({ debt: 50_000, loanPayment: 100_000 });
+    expect(points[3]).toMatchObject({ cash: 750_000, debt: 0, net: 750_000, loanPayment: 50_000, loanInterest: 0 });
+    expect(points[5]).toMatchObject({ cash: 750_000, debt: 0, loanPayment: 0, loanInterest: 0 });
+  });
+
+  it('handles different loan schedules alongside legacy debts', () => {
+    const data = emptyData();
+    data.assets = [
+      { id: 'cash', name: '현금', kind: 'cash', amount: 1_000_000 },
+      { id: 'a', name: '단기 대출', kind: 'debt', amount: 100_000, loan: { annualRate: 12, monthlyPayment: 200_000 } },
+      { id: 'b', name: '장기 대출', kind: 'debt', amount: 100_000, loan: { annualRate: 0, monthlyPayment: 25_000 } },
+      { id: 'legacy', name: '기존 부채', kind: 'debt', amount: 50_000 },
+    ];
+    const points = project(data, 5, {}, '2026-11');
+    expect(points[1]).toMatchObject({ cash: 874_000, debt: 125_000, net: 749_000, loanPayment: 126_000, loanInterest: 1_000 });
+    expect(points[5]).toMatchObject({ cash: 799_000, debt: 50_000, net: 749_000, loanPayment: 0, loanInterest: 0 });
+  });
+
+  it('adds unpaid interest to debt and does not treat borrowing as income', () => {
+    const data = emptyData();
+    data.assets = [
+      { id: 'cash', name: '현금', kind: 'cash', amount: 1_000_000 },
+      { id: 'loan', name: '대출', kind: 'debt', amount: 1_000_000, loan: { annualRate: 12, monthlyPayment: 5_000 } },
+    ];
+    expect(project(data, 1)[1]).toMatchObject({ cash: 995_000, debt: 1_005_000, net: -10_000, loanInterest: 10_000 });
+    data.assets[1].loan!.monthlyPayment = 0;
+    expect(project(data, 1)[1]).toMatchObject({ cash: 1_000_000, debt: 1_010_000, net: -10_000, loanPayment: 0 });
+  });
+
+  it('converts input units, requires both terms and preserves them in backups', () => {
+    const prepared = prepareEntry('asset', 'debt', { name: '대출', value: '1000', loan: { annualRate: '4.5', monthlyPayment: '30' } }, 'loan');
+    expect(prepared.entry).toMatchObject({ amount: 10_000_000, loan: { annualRate: 4.5, monthlyPayment: 300_000 } });
+    if (prepared.mode !== 'asset') throw new Error('Expected asset');
+    const data = { ...emptyData(), assets: [prepared.entry] };
+    expect(parseBackup(makeBackup(data))).toEqual(data);
+    expect(() => prepareEntry('asset', 'debt', { name: '대출', value: '100', loan: { annualRate: '', monthlyPayment: '30' } })).toThrow();
+    expect(() => prepareEntry('asset', 'debt', { name: '대출', value: '100', loan: { annualRate: '4', monthlyPayment: '' } })).toThrow();
+    expect(prepareEntry('asset', 'debt', { name: '대출', value: '100', loan: { annualRate: '0', monthlyPayment: '0' } }).entry).toMatchObject({ loan: { annualRate: 0, monthlyPayment: 0 } });
+    expect(prepareEntry('asset', 'debt', { name: '기존', value: '100', loan: { annualRate: '', monthlyPayment: '' } }).entry).not.toHaveProperty('loan');
+    expect(() => validateData({ ...data, assets: [{ ...prepared.entry, kind: 'cash' }] })).toThrow();
+    expect(() => validateData({ ...data, assets: [{ ...prepared.entry, loan: { annualRate: -1, monthlyPayment: 0 } }] })).toThrow();
+    expect(() => validateData({ ...data, assets: [{ ...prepared.entry, loan: { annualRate: 5, monthlyPayment: -1 } }] })).toThrow();
   });
 });

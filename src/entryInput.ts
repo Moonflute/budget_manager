@@ -1,4 +1,4 @@
-import { currentMonth, shiftMonth, uid, validMonth, validateInstallmentTerms, type Asset, type AssetKind, type Flow, type FlowKind, type InvestmentAccount, type InvestmentProduct, type PlannedEvent } from './model';
+import { currentMonth, shiftMonth, uid, validMonth, validateInstallmentTerms, validateLoanTerms, type Asset, type AssetKind, type Flow, type FlowKind, type InvestmentAccount, type InvestmentProduct, type PlannedEvent } from './model';
 
 export type EntryMode = 'asset' | 'flow' | 'event';
 export type Entry = Asset | Flow | PlannedEvent;
@@ -13,6 +13,7 @@ export interface EntryInput {
   month?: string;
   installment?: { termMonths: string; annualRate: string; startMonth: string; assetId?: string };
   investment?: { product: InvestmentProduct | ''; account: InvestmentAccount | ''; monthlyBuy?: string };
+  loan?: { annualRate: string; monthlyPayment: string };
 }
 
 export const maxManWon = 1_000_000_000;
@@ -46,6 +47,14 @@ export function prepareEntry(mode: EntryMode, kind: string, input: EntryInput, i
       const monthlyBuy = value === undefined ? 0 : amountInWon(value);
       if (monthlyBuy === null) throw new Error('월 매수액을 확인해 주세요.');
       entry.investment = { product: product || null, account: account || null, monthlyBuy };
+    }
+    if (kind === 'debt' && input.loan && (input.loan.annualRate.trim() || input.loan.monthlyPayment.trim())) {
+      const monthlyPayment = amountInWon(input.loan.monthlyPayment);
+      if (monthlyPayment === null) throw new Error('월 상환액을 입력해 주세요. 상환하지 않으면 0을 입력해 주세요.');
+      entry.loan = validateLoanTerms({
+        annualRate: input.loan.annualRate.trim() ? Number(input.loan.annualRate) : NaN,
+        monthlyPayment,
+      });
     }
     return { mode, entry };
   }

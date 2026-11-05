@@ -9,7 +9,8 @@ export interface InvestmentDetails {
   account: InvestmentAccount | null;
   monthlyBuy: number;
 }
-export interface Asset { id: string; name: string; kind: AssetKind; amount: number; investment?: InvestmentDetails }
+export interface LoanTerms { annualRate: number; monthlyPayment: number }
+export interface Asset { id: string; name: string; kind: AssetKind; amount: number; investment?: InvestmentDetails; loan?: LoanTerms }
 export interface InstallmentTerms { termMonths: number; annualRate: number; startMonth?: string; assetId?: string }
 export interface Flow { id: string; name: string; kind: FlowKind; amount: number; installment?: InstallmentTerms }
 export interface PlannedEvent { id: string; name: string; month: string; kind: 'income' | 'expense'; amount: number }
@@ -27,8 +28,8 @@ export interface BudgetData {
   lastBackupAt: string | null;
 }
 export interface Balances { cash: number; savings: number; investment: number; debt: number; total: number; net: number }
-export interface MonthlyFlow { income: number; expense: number; saving: number; investment: number; surplus: number; cash: number }
-export interface ProjectionPoint extends Balances { month: string; step: number }
+export interface MonthlyFlow { income: number; expense: number; saving: number; investment: number; repayment: number; surplus: number; cash: number }
+export interface ProjectionPoint extends Balances { month: string; step: number; loanPayment?: number; loanInterest?: number }
 export interface Scenario { expenseReduction?: number; extraInvestment?: number; investmentRate?: number }
 
 export const assetLabels: Record<AssetKind, string> = { cash: '현금·입출금', savings: '예금·적금', investment: '투자', debt: '부채' };
@@ -67,17 +68,24 @@ export function installmentActive(terms: InstallmentTerms, month: string): boole
   return !terms.startMonth || (month >= terms.startMonth && month < shiftMonth(terms.startMonth, terms.termMonths));
 }
 
+export function loanMonth(balance: number, terms: LoanTerms) {
+  const interest = Math.round(balance * terms.annualRate / 1200);
+  const payment = Math.min(terms.monthlyPayment, balance + interest);
+  return { interest, payment, balance: balance + interest - payment };
+}
+
 export function monthlyFlow({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>, month?: string): MonthlyFlow {
-  const result = { income: 0, expense: 0, saving: 0, investment: 0, surplus: 0, cash: 0 };
+  const result = { income: 0, expense: 0, saving: 0, investment: 0, repayment: 0, surplus: 0, cash: 0 };
   for (const f of flows) {
     if (month && f.installment && !installmentActive(f.installment, month)) continue;
     result[f.kind] += f.amount;
   }
   for (const asset of assets) {
     if (asset.kind === 'investment') result.investment += asset.investment?.monthlyBuy ?? 0;
+    if (asset.kind === 'debt' && asset.loan) result.repayment += loanMonth(asset.amount, asset.loan).payment;
   }
   result.surplus = result.income - result.expense;
-  result.cash = result.surplus - result.saving - result.investment;
+  result.cash = result.surplus - result.saving - result.investment - result.repayment;
   return result;
 }
 
@@ -130,6 +138,8 @@ export function recentExpenseAverage(expenses: ImportedExpense[], before = curre
 // and simple interest earned after the opening balance, paid at maturity.
 export function project(data: BudgetData, months: number, scenario: Scenario = {}, start = currentMonth()): ProjectionPoint[] {
   const b = balances(data.assets);
+  const assets = data.assets.map(asset => ({ ...asset }));
+  const loans = assets.filter(asset => asset.kind === 'debt' && asset.loan);
   const reduction = Math.min(Math.max(scenario.expenseReduction ?? 0, 0), monthlyFlow(data).expense);
   const extraInvestment = Math.max(scenario.extraInvestment ?? 0, 0);
   const savingsMonthlyRate = Math.pow(1 + data.assumptions.savingsRate / 100, 1 / 12) - 1;
@@ -146,8 +156,15 @@ export function project(data: BudgetData, months: number, scenario: Scenario = {
   let ordinarySavings = b.savings - installments.reduce((sum, plan) => sum + plan.principal, 0);
   for (let step = 1; step <= months; step++) {
     const month = shiftMonth(start, step);
-    const flow = monthlyFlow({ assets: data.assets, flows: flowsForMonth(data, month) });
+    const flow = monthlyFlow({ assets, flows: flowsForMonth(data, month) });
     b.cash += flow.cash + reduction - extraInvestment;
+    let loanInterest = 0;
+    for (const asset of loans) {
+      const payment = loanMonth(asset.amount, asset.loan!);
+      asset.amount = payment.balance;
+      loanInterest += payment.interest;
+    }
+    b.debt = assets.filter(asset => asset.kind === 'debt').reduce((sum, asset) => sum + asset.amount, 0);
     let installmentPayments = 0;
     for (const plan of installments) {
       if (month === plan.maturity) {
@@ -165,7 +182,7 @@ export function project(data: BudgetData, months: number, scenario: Scenario = {
     b.investment = Math.round(b.investment * (1 + investmentMonthlyRate) + flow.investment + extraInvestment);
     b.total = b.cash + b.savings + b.investment;
     b.net = b.total - b.debt;
-    points.push({ ...b, month, step });
+    points.push({ ...b, month, step, ...(loans.length ? { loanPayment: flow.repayment, loanInterest } : {}) });
   }
   return points;
 }
@@ -232,6 +249,11 @@ export function validateInstallmentTerms(value: unknown): InstallmentTerms {
   }
   if (assetId !== undefined) terms.assetId = str(assetId);
   return terms;
+}
+export function validateLoanTerms(value: unknown): LoanTerms {
+  const { annualRate, monthlyPayment } = obj(value);
+  if (typeof annualRate !== 'number' || !Number.isFinite(annualRate) || annualRate < 0 || annualRate > 100) throw new Error('대출 연이율은 0%에서 100% 사이여야 해요.');
+  return { annualRate, monthlyPayment: amount(monthlyPayment) };
 }
 function timestamp(value: unknown): string | null {
   if (value === null) return null;
@@ -303,6 +325,10 @@ export function validateData(value: unknown): BudgetData {
           account: details.account === null ? null : kind(details.account, Object.keys(investmentAccountLabels) as InvestmentAccount[]),
           monthlyBuy: amount(details.monthlyBuy),
         };
+      }
+      if (x.loan !== undefined) {
+        if (asset.kind !== 'debt') throw new Error('대출 조건은 부채 항목에만 입력할 수 있어요.');
+        asset.loan = validateLoanTerms(x.loan);
       }
       return asset;
     }),

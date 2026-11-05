@@ -3,7 +3,7 @@ import { ArrowUpRight, Check, CircleHelp, Download, FileSpreadsheet, FolderOpen,
 import { AddButton, Empty, MonthControl, SectionTitle, TrendChart, assetIcons, flowIcons } from './components';
 import { ImportedExpenseHistory } from './ExpenseImport';
 import type { Entry, EntryMode } from './entryInput';
-import { assetLabels, flowLabels, investmentProductLabels, investmentAccountLabels, balances, flowsForMonth, monthlyFlow, project, money, compactMoney, monthLabel, currentMonth, shiftMonth, installmentActive, recentExpenseAverage, type AssetKind, type BudgetData, type ImportedExpense, type ProjectionPoint } from './model';
+import { assetLabels, flowLabels, investmentProductLabels, investmentAccountLabels, balances, flowsForMonth, monthlyFlow, project, money, compactMoney, monthLabel, currentMonth, shiftMonth, installmentActive, recentExpenseAverage, loanMonth, type AssetKind, type BudgetData, type ImportedExpense, type ProjectionPoint } from './model';
 
 export interface ViewProps {
   data: BudgetData;
@@ -13,11 +13,12 @@ export interface ViewProps {
 
 export function Assets({ data, add, edit }: ViewProps) {
   const b = balances(data.assets);
-  const expense = monthlyFlow(data, currentMonth()).expense;
+  const flow = monthlyFlow(data, currentMonth());
+  const expense = flow.expense + flow.repayment;
   return <>
     <div className="panel-actions"><AddButton onClick={() => add('asset')}>자산 추가</AddButton></div>
     <div className="balance-strip"><div><span>총자산</span><strong>{money(b.total)}</strong></div><span className="math-sign">−</span><div><span>총부채</span><strong>{money(b.debt)}</strong></div><span className="math-sign">=</span><div><span>순자산</span><strong className="accent">{money(b.net)}</strong></div></div>
-    <div className="cash-coverage"><span>현금 ÷ 월 생활 지출</span><strong>{expense > 0 ? `${(b.cash / expense).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}개월` : '지출 계획 없음'}</strong></div>
+    <div className="cash-coverage"><span>현금 ÷ 월 지출·상환</span><strong>{expense > 0 ? `${(b.cash / expense).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}개월` : '지출 계획 없음'}</strong></div>
     <div className="two-column">{(Object.keys(assetLabels) as AssetKind[]).map(kind => {
       const Icon = assetIcons[kind];
       const entries = data.assets.filter(asset => asset.kind === kind);
@@ -32,9 +33,10 @@ export function Assets({ data, add, edit }: ViewProps) {
                 details?.account && investmentAccountLabels[details.account],
                 details?.monthlyBuy && `월 ${money(details.monthlyBuy)} 매수`,
               ].filter(Boolean).join(' · ');
+              const loanSummary = asset.kind === 'debt' ? asset.loan ? `연 ${asset.loan.annualRate}% · 월 ${money(asset.loan.monthlyPayment)} 상환` : '이율·상환액 미입력' : '';
               return (
                 <button className="entry-row" key={asset.id} onClick={() => edit('asset', asset)}>
-                  <span>{asset.name}{summary ? <small className="entry-detail">{summary}</small> : null}</span>
+                  <span>{asset.name}{summary || loanSummary ? <small className="entry-detail">{summary || loanSummary}</small> : null}</span>
                   <b>{money(asset.amount)}</b><Pencil size={15} />
                 </button>
               );
@@ -65,7 +67,7 @@ export function Budget({ data, add, edit, month, changeMonth, removeImportedExpe
       <button type="button" className="button secondary" onClick={onImportExpenses}><FileSpreadsheet size={16} aria-hidden="true" />엑셀 지출 가져오기</button>
       <AddButton onClick={() => add('flow')}>예산 항목 추가</AddButton>
     </div>
-    <div className={`budget-equation ${f.cash < 0 ? 'over-budget' : ''}`}><div><span>계획 수입</span><strong>{compactMoney(f.income)}원</strong></div><div><span>계획 지출</span><strong>{compactMoney(f.expense)}원</strong></div><div><span>저축·투자</span><strong>{compactMoney(f.saving + f.investment)}원</strong></div><div><span>계획 잔여</span><strong>{compactMoney(f.cash)}원</strong></div></div>
+    <div className={`budget-equation ${f.cash < 0 ? 'over-budget' : ''} ${f.repayment > 0 ? 'with-loans' : ''}`}><div><span>계획 수입</span><strong>{compactMoney(f.income)}원</strong></div><div><span>계획 지출</span><strong>{compactMoney(f.expense)}원</strong></div><div><span>저축·투자</span><strong>{compactMoney(f.saving + f.investment)}원</strong></div>{f.repayment > 0 ? <div><span>대출 상환</span><strong>{compactMoney(f.repayment)}원</strong></div> : null}<div><span>계획 잔여</span><strong>{compactMoney(f.cash)}원</strong></div></div>
     {f.cash < 0 ? <div className="warning-note">월 배분 초과 {money(-f.cash)} · 기존 현금에서 충당</div> : null}
     {expenses.length ? <div className="expense-comparison">
       <div><span>가져온 지출</span><strong>{money(spent)}</strong></div>
@@ -156,19 +158,26 @@ export function Forecast({ data, add, edit, saveAssumptions, busy }: ViewProps &
   const goalPoint = scenario.find(p => p.net >= data.assumptions.target);
   const upcoming = data.events.filter(e => e.month > currentMonth()).sort((a, b) => a.month.localeCompare(b.month));
   const undatedInstallments = data.flows.filter(flow => flow.installment && !flow.installment.startMonth);
+  const debtAssets = data.assets.filter(asset => asset.kind === 'debt' && asset.amount > 0);
   return <>
     {undatedInstallments.length ? <div className="warning-note">적금 시작 월 확인 필요 · 만기 계산 제외<div className="missing-terms">{undatedInstallments.map(flow => <button className="text-button" key={flow.id} onClick={() => edit('flow', flow)}>{flow.name}<Pencil size={14} /></button>)}</div></div> : null}
+    {debtAssets.map(asset => {
+      if (asset.loan && loanMonth(asset.amount, asset.loan).balance < asset.amount) return null;
+      const status = !asset.loan ? '이율·상환액 미입력 · 잔액 고정' : loanMonth(asset.amount, asset.loan).balance > asset.amount ? '상환액이 이자보다 적음 · 부채 증가' : '원금 유지';
+      return <div className="warning-note" key={asset.id}><button className="text-button" onClick={() => edit('asset', asset)}>{asset.name}<Pencil size={14} /></button> · {status}</div>;
+    })}
     <div className="forecast-basis">
       <label>월 지출 기준<select aria-label="예측 월 지출 기준" value={expenseBasis} onChange={event => { setExpenseBasis(event.target.value as 'plan' | 'history'); setReduction(0); }}>
         <option value="plan">직접 입력한 계획 · {money(plannedExpense)}</option>
         {average.months.length ? <option value="history">이전 {average.months.length}개월 기록 평균 · {money(average.amount)}</option> : null}
       </select></label>
       {expenseBasis === 'history' ? <small>가져온 기록 기준 · {[...average.months].reverse().join(', ')}</small> : !plannedExpense ? <small className="negative">월 지출 계획 없음 · 현재 0원으로 예측</small> : null}
+      {debtAssets.some(asset => asset.loan) ? <small>대출 상환 별도 반영 · 생활 지출에 중복 입력 제외</small> : null}
     </div>
     <div className="panel-actions"><div className="segmented" aria-label="예측 기간">{[1, 3, 5, 10].map(y => <button aria-pressed={years === y} className={years === y ? 'active' : ''} key={y} onClick={() => setYears(y)}>{y}년</button>)}</div></div>
     <div className="forecast-layout"><section className="panel forecast-main"><div className="chart-heading"><div><span>{years}년 뒤 예상 순자산</span><strong>{money(last.net)}</strong></div>{modified ? <span className="comparison-chip">기존보다 {last.net >= baseline.at(-1)!.net ? '+' : ''}{compactMoney(last.net - baseline.at(-1)!.net)}원</span> : <span className="chip">현재 계획</span>}</div><div className="chart-legends"><span className="legend"><i className="dot" />{modified ? '바꾼 계획' : '현재 계획'}</span>{modified ? <span className="legend muted"><i className="dash" />기존 계획</span> : null}</div><TrendChart points={baseline} comparison={modified ? scenario : undefined} detailed /><div className="forecast-result"><Target size={21} /><div><strong>{goalPoint ? goalPoint.step === 0 ? '목표 달성' : `${monthLabel(goalPoint.month)}, 목표 달성 예상` : `${years}년 후 목표까지 ${money(Math.max(0, data.assumptions.target - last.net))}`}</strong><p>순자산 목표 {money(data.assumptions.target)} · 현재 가정 기준</p></div></div>{firstShortfall ? <div className="warning-note">{firstShortfall.step === 0 ? '현재' : monthLabel(firstShortfall.month)}부터 현금 부족 · 자동 대출 없음</div> : null}</section>
       <section className="panel scenario-panel"><h2>시나리오</h2><p className="panel-description">비교용 · 월 예산에 저장되지 않음</p><label className="slider-label"><span>월 생활비 줄이기<strong>{reduction}만 원</strong></span><input type="range" min="0" max={Math.floor(flow.expense / 10_000)} step="1" value={Math.min(reduction, Math.floor(flow.expense / 10_000))} onChange={e => setReduction(Number(e.target.value))} /><small>절감액은 현금에 남음</small></label><label className="slider-label"><span>월 투자 늘리기<strong>{extra}만 원</strong></span><input type="range" min="0" max="200" step="5" value={extra} onChange={e => setExtra(Number(e.target.value))} /><small>추가액은 현금에서 이동</small></label><label className="slider-label"><span>투자 연수익률 가정<strong>{rate}%</strong></span><input type="range" min="-100" max="100" step="0.5" value={rate} onChange={e => setRate(Number(e.target.value))} /></label><button className="button secondary full" onClick={() => { setReduction(0); setExtra(0); setRate(data.assumptions.investmentRate); }}>현재 계획으로 되돌리기</button></section></div>
-    <div className="two-column"><section className="panel"><SectionTitle title="기본 가정과 목표" /><AssumptionsForm key={JSON.stringify(data.assumptions)} data={data} save={saveAssumptions} busy={busy} /><p className="fine-print">다음 달부터 계산 · 일반 저축·투자 월말 납입·월 복리. 적금 월초 납입·단리·만기월 현금 수령. 연결 잔액의 향후 이자만 계산. 세금·수수료·물가·대출 이자·상환 미반영.</p></section><section className="panel"><SectionTitle title="예정 수입·지출" action={<button className="icon-button" aria-label="예정 항목 추가" onClick={() => add('event')}><Plus size={20} /></button>} />{upcoming.length ? <div className="entry-list">{upcoming.map(e => <button className="entry-row event-row" key={e.id} onClick={() => edit('event', e)}><span><b>{e.name}</b><small>{monthLabel(e.month)}</small></span><strong className={e.kind === 'income' ? 'accent' : ''}>{e.kind === 'income' ? '+' : '−'}{compactMoney(e.amount)}원</strong><Pencil size={14} /></button>)}</div> : <Empty icon={<CalendarDays size={26} />} title="예정 항목 없음" description="해당 월에 1회 반영" action={<button className="button secondary" onClick={() => add('event')}>예정 항목 추가</button>} />}</section></div>
+    <div className="two-column"><section className="panel"><SectionTitle title="기본 가정과 목표" /><AssumptionsForm key={JSON.stringify(data.assumptions)} data={data} save={saveAssumptions} busy={busy} /><p className="fine-print">다음 달부터 계산 · 일반 저축·투자 월말 납입·월 복리. 적금 월초 납입·단리·만기월 현금 수령. 연결 잔액의 향후 이자만 계산. 대출 잔액×연이율÷12 · 월말 상환 · 미납이자 잔액 가산. 세금·수수료·물가 미반영.</p></section><section className="panel"><SectionTitle title="예정 수입·지출" action={<button className="icon-button" aria-label="예정 항목 추가" onClick={() => add('event')}><Plus size={20} /></button>} />{upcoming.length ? <div className="entry-list">{upcoming.map(e => <button className="entry-row event-row" key={e.id} onClick={() => edit('event', e)}><span><b>{e.name}</b><small>{monthLabel(e.month)}</small></span><strong className={e.kind === 'income' ? 'accent' : ''}>{e.kind === 'income' ? '+' : '−'}{compactMoney(e.amount)}원</strong><Pencil size={14} /></button>)}</div> : <Empty icon={<CalendarDays size={26} />} title="예정 항목 없음" description="해당 월에 1회 반영" action={<button className="button secondary" onClick={() => add('event')}>예정 항목 추가</button>} />}</section></div>
   </>;
 }
 

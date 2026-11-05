@@ -14,7 +14,7 @@ const categories = {
   'asset:cash': { label: assetLabels.cash, mode: 'asset', kind: 'cash', amount: '현재 잔액' },
   'asset:savings': { label: assetLabels.savings, mode: 'asset', kind: 'savings', amount: '현재 잔액' },
   'asset:investment': { label: '투자 포트폴리오', mode: 'asset', kind: 'investment', amount: '현재 평가액' },
-  'asset:debt': { label: assetLabels.debt, mode: 'asset', kind: 'debt', amount: '현재 잔액' },
+  'asset:debt': { label: assetLabels.debt, mode: 'asset', kind: 'debt', amount: '남은 원금' },
 } as const;
 
 export type EntryCategory = keyof typeof categories;
@@ -37,17 +37,19 @@ interface DraftRow {
   product: InvestmentProduct | '';
   account: InvestmentAccount | '';
   monthlyBuy: string;
+  loanRate: string;
+  monthlyPayment: string;
 }
 
 function emptyRow(category: EntryCategory, month: string): DraftRow {
   return {
-    id: uid(), name: '', value: '', termMonths: '', annualRate: '', startMonth: month, assetId: '', product: '', account: '', monthlyBuy: '',
+    id: uid(), name: '', value: '', termMonths: '', annualRate: '', startMonth: month, assetId: '', product: '', account: '', monthlyBuy: '', loanRate: '', monthlyPayment: '',
     month: category === 'event:expense' && month <= currentMonth() ? shiftMonth(currentMonth(), 1) : month,
   };
 }
 
 function hasInput(row: DraftRow): boolean {
-  return Boolean(row.name.trim() || row.value || row.termMonths || row.annualRate || row.product || row.account || row.monthlyBuy);
+  return Boolean(row.name.trim() || row.value || row.termMonths || row.annualRate || row.product || row.account || row.monthlyBuy || row.loanRate || row.monthlyPayment);
 }
 
 export function EntrySheet({ initialCategory, initialMonth, assets, save, busy }: { initialCategory: EntryCategory; initialMonth: string; assets: Asset[]; save: (entries: PreparedEntry[]) => Promise<boolean>; busy: boolean }) {
@@ -60,6 +62,7 @@ export function EntrySheet({ initialCategory, initialMonth, assets, save, busy }
   const hasMonth = fields.mode === 'event';
   const hasInstallment = category === 'flow:installment';
   const hasPortfolio = category === 'asset:investment';
+  const hasLoan = category === 'asset:debt';
 
   function changeCategory(next: EntryCategory) {
     if (!drafts[next]) setDrafts(previous => ({ ...previous, [next]: [emptyRow(next, initialMonth)] }));
@@ -93,6 +96,7 @@ export function EntrySheet({ initialCategory, initialMonth, assets, save, busy }
             month: row.month,
             installment: key === 'flow:installment' ? { termMonths: row.termMonths, annualRate: row.annualRate, startMonth: row.startMonth, assetId: row.assetId } : undefined,
             investment: key === 'asset:investment' ? { product: row.product, account: row.account, monthlyBuy: row.monthlyBuy || undefined } : undefined,
+            loan: key === 'asset:debt' ? { annualRate: row.loanRate, monthlyPayment: row.monthlyPayment } : undefined,
           }, row.id));
         } catch (problem) {
           setCategory(key);
@@ -127,7 +131,7 @@ export function EntrySheet({ initialCategory, initialMonth, assets, save, busy }
                   <td><input aria-label={`${line} ${fields.amount}`} type="number" inputMode="decimal" min="0" max={maxManWon} step="0.0001" value={row.value} onChange={event => updateRow(row.id, { value: event.target.value })} /></td>
                   <td className="entry-sheet-remove"><button type="button" className="icon-button" aria-label={`${line} 삭제`} onClick={() => removeRow(row.id)}><X size={17} aria-hidden="true" /></button></td>
                 </tr>
-                {hasMonth || hasInstallment || hasPortfolio ? (
+                {hasMonth || hasInstallment || hasPortfolio || hasLoan ? (
                   <tr className="entry-sheet-detail-row">
                     <td colSpan={3}>
                       <div className="entry-sheet-details">
@@ -147,6 +151,10 @@ export function EntrySheet({ initialCategory, initialMonth, assets, save, busy }
                           <label>투자 상품<select aria-label={`${line} 투자 상품`} value={row.product} onChange={event => updateRow(row.id, { product: event.target.value as DraftRow['product'] })}><option value="">미분류</option>{Object.entries(investmentProductLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
                           <label>계좌 유형<select aria-label={`${line} 계좌 유형`} value={row.account} onChange={event => updateRow(row.id, { account: event.target.value as DraftRow['account'] })}><option value="">미지정</option>{Object.entries(investmentAccountLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
                           <label>월 매수액 (만 원)<input aria-label={`${line} 월 매수액`} type="number" inputMode="decimal" min="0" max={maxManWon} step="0.0001" value={row.monthlyBuy} onChange={event => updateRow(row.id, { monthlyBuy: event.target.value })} /></label>
+                        </> : null}
+                        {hasLoan ? <>
+                          <label>대출 연이율 (%)<input aria-label={`${line} 대출 연이율 (%)`} type="number" inputMode="decimal" min="0" max="100" step="any" value={row.loanRate} onChange={event => updateRow(row.id, { loanRate: event.target.value })} /></label>
+                          <label>월 상환액 (만 원·원금+이자)<input aria-label={`${line} 월 상환액`} type="number" inputMode="decimal" min="0" max={maxManWon} step="0.0001" value={row.monthlyPayment} onChange={event => updateRow(row.id, { monthlyPayment: event.target.value })} /></label>
                         </> : null}
                       </div>
                     </td>
