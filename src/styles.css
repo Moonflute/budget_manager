@@ -87,6 +87,26 @@
 .flow-view-toggle { display: flex; gap: 4px; }
 .flow-view-toggle button { min-height: 32px; padding: 4px 10px; border-radius: 6px; }
 .flow-view-toggle button[aria-pressed="true"] { background: var(--surface-active); color: var(--primary); }
+.sankey-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 18px auto 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.sankey-summary > strong {
+  color: var(--ink);
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.sankey-summary small { margin-left: 4px; font-size: 16px; font-weight: 400; }
+.sankey-summary .sankey-shortfall { margin-top: 4px; color: #a2475c; font-size: 11px; }
+.sankey-chart { width: 100%; max-width: 880px; height: clamp(360px, calc(100svh - 360px), 460px); margin: 0 auto; }
 .flow-details { max-width: 720px; margin: 12px auto 0; border-top: 1px solid var(--border); }
 .flow-details summary { cursor: pointer; padding: 14px 0; color: var(--muted); font-size: 12px; }
 .flow-detail-group { margin-bottom: 14px; }
