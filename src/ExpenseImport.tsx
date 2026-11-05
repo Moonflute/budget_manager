@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { FileSpreadsheet } from 'lucide-react';
+import { FileSpreadsheet, Trash2 } from 'lucide-react';
 import { SectionTitle } from './components';
-import { currentMonth, expenseGroups, maxImportedExpenses, money, monthLabel, newImportedExpenses, type ImportedExpense } from './model';
+import { expenseGroups, maxImportedExpenses, money, monthLabel, newImportedExpenses, type ImportedExpense } from './model';
 
 export function ExpenseImport({ existing, save, busy }: { existing: ImportedExpense[]; save: (rows: ImportedExpense[]) => Promise<boolean>; busy: boolean }) {
   const [preview, setPreview] = useState<{ rows: ImportedExpense[]; duplicates: number; invalid: number } | null>(null);
@@ -81,31 +81,27 @@ export function ExpenseImport({ existing, save, busy }: { existing: ImportedExpe
   );
 }
 
-export function ImportedExpenseHistory({ expenses }: { expenses: ImportedExpense[] }) {
-  const [selection, setSelection] = useState('');
-  const months = useMemo(() => [...new Set(expenses.map(row => row.date.slice(0, 7)))].sort().reverse(), [expenses]);
-  const current = currentMonth();
-  const month = months.includes(selection) ? selection : months.includes(current) ? current : months[0];
-  const groups = useMemo(() => expenseGroups(expenses, month), [expenses, month]);
-  if (!month) return null;
+export function ImportedExpenseHistory({ expenses, remove }: { expenses: ImportedExpense[]; remove: (rows: ImportedExpense[]) => void }) {
+  const groups = useMemo(() => expenseGroups(expenses), [expenses]);
+  const dates = expenses.map(row => row.date).sort();
+  if (!expenses.length) return null;
 
   return (
     <section className="panel history-panel imported-expenses">
       <SectionTitle title="가져온 지출" action={
-        <select className="expense-month" aria-label="가져온 지출 월" value={month} onChange={event => setSelection(event.target.value)}>
-          {months.map(value => <option key={value} value={value}>{monthLabel(value)}</option>)}
-        </select>
+        <button className="icon-button danger" type="button" aria-label="이 달 가져온 지출 삭제" onClick={() => remove(expenses)}><Trash2 size={17} aria-hidden="true" /></button>
       } />
-      <p className="expense-period">{groups.reduce((sum, group) => sum + group.items.length, 0)}건 · <strong>{money(groups.reduce((sum, group) => sum + group.amount, 0))}</strong></p>
+      <p className="expense-period">기록 {dates[0]} ~ {dates.at(-1)} · {expenses.length}건</p>
       <div className="expense-categories">
         {groups.map(group => (
           <details key={group.name}>
             <summary><span>{group.name}<small>{group.items.length}건</small></span><strong>{money(group.amount)}</strong></summary>
             <ul className="imported-expense-items">
-              {group.items.map(row => (
+              {[...group.items].sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time)).map(row => (
                 <li key={row.id}>
                   <span>{row.name}<small>{row.date}{row.subcategory ? ` · ${row.subcategory}` : ''}</small></span>
                   <strong>{money(row.amount)}</strong>
+                  <button className="icon-button" type="button" aria-label={`${row.date} ${row.name} 삭제`} onClick={() => remove([row])}><Trash2 size={15} aria-hidden="true" /></button>
                 </li>
               ))}
             </ul>

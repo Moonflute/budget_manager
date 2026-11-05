@@ -4,8 +4,9 @@ import * as echarts from 'echarts/core';
 import { SankeyChart, type SankeySeriesOption } from 'echarts/charts';
 import { TooltipComponent, type TooltipComponentOption } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
-import { ChevronLeft, ChevronRight, GitFork } from 'lucide-react';
-import { compactMoney, currentMonth, exampleFlows, flowLabels, recordedFlowsForMonth, money, monthLabel, monthlyFlow, shiftMonth, type BudgetData, type Flow } from './model';
+import { GitFork } from 'lucide-react';
+import { MonthControl } from './components';
+import { compactMoney, currentMonth, exampleFlows, flowLabels, flowsForMonth, recordedFlowsForMonth, money, monthLabel, monthlyFlow, type BudgetData, type Flow, type FlowKind } from './model';
 
 echarts.use([SankeyChart, TooltipComponent, SVGRenderer]);
 
@@ -147,31 +148,34 @@ function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>, 
   return { option, description };
 }
 
-export function MonthlySankey({ data }: { data: BudgetData }) {
-  const [month, setMonth] = useState(() => currentMonth());
+export function MonthlySankey({ data, month, changeMonth }: { data: BudgetData; month: string; changeMonth: (month: string) => void }) {
+  const [basis, setBasis] = useState<'plan' | 'recorded'>('recorded');
   const { flows, assets, events, importedExpenses, history } = data;
   const example = month === currentMonth() && !(flows.length || assets.length || events.length || importedExpenses.length || history.length);
-  const chart = useMemo(() => {
-    if (example) return monthlySankey({ flows: exampleFlows(), assets }, flowLabels.expense);
-    const actual = importedExpenses.some(row => row.date.slice(0, 7) === month);
-    return monthlySankey({ flows: recordedFlowsForMonth({ flows, events, importedExpenses }, month), assets }, actual ? '실제 지출' : flowLabels.expense);
-  }, [example, flows, assets, events, importedExpenses, month]);
+  const hasRecords = importedExpenses.some(row => row.date.slice(0, 7) === month);
+  const recorded = hasRecords && basis === 'recorded';
+  const displayedFlows = useMemo(() => {
+    if (example) return exampleFlows();
+    const monthlyData = { flows, events, importedExpenses };
+    return recorded ? recordedFlowsForMonth(monthlyData, month) : flowsForMonth(monthlyData, month);
+  }, [example, recorded, flows, events, importedExpenses, month]);
+  const chart = useMemo(() => monthlySankey({ flows: displayedFlows, assets }, recorded ? '기록 지출' : flowLabels.expense), [displayedFlows, assets, recorded]);
+  const details = [
+    ...displayedFlows,
+    ...assets.filter(asset => asset.kind === 'investment' && asset.investment?.monthlyBuy).map(asset => ({ id: `asset:${asset.id}`, name: asset.name, kind: 'investment' as const, amount: asset.investment!.monthlyBuy })),
+  ];
 
   return (
     <>
-      <header className="mb-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center">
-        <div className="col-start-2 flex items-center" role="group" aria-label="표시 월">
-          <button type="button" className="icon-button h-11! w-11!" aria-label="이전 달" onClick={() => setMonth(value => shiftMonth(value, -1))}>
-            <ChevronLeft size={19} aria-hidden="true" />
-          </button>
-          <time dateTime={month} title={monthLabel(month)} className="min-w-14 whitespace-nowrap text-center text-sm font-semibold tabular-nums" aria-live="polite">
-            {month.replace('-', '.')}
-          </time>
-          <button type="button" className="icon-button h-11! w-11!" aria-label="다음 달" onClick={() => setMonth(value => shiftMonth(value, 1))}>
-            <ChevronRight size={19} aria-hidden="true" />
-          </button>
+      <header className="sankey-toolbar">
+        <MonthControl month={month} change={changeMonth} />
+        <div className="flow-basis">
+          {hasRecords ? <div className="flow-view-toggle" role="group" aria-label="지출 표시 기준">
+            <button type="button" aria-pressed={!recorded} onClick={() => setBasis('plan')}>계획</button>
+            <button type="button" aria-pressed={recorded} onClick={() => setBasis('recorded')}>지출 기록</button>
+          </div> : <span>{example ? '예시' : '계획'}</span>}
+          {recorded ? <small>수입·저축·투자는 계획 기준</small> : null}
         </div>
-        {example ? <span className="chip col-start-3 justify-self-end">예시</span> : null}
       </header>
       <div className="h-[clamp(340px,calc(100svh_-_305px),440px)] w-full md:h-[clamp(410px,56vh,620px)]">
         {chart ? (
@@ -185,6 +189,17 @@ export function MonthlySankey({ data }: { data: BudgetData }) {
           </div>
         )}
       </div>
+      {chart ? <details className="flow-details">
+        <summary>항목별 금액</summary>
+        {(Object.keys(flowLabels) as FlowKind[]).map(kind => {
+          const items = details.filter(item => item.kind === kind && item.amount > 0);
+          if (!items.length) return null;
+          return <div className="flow-detail-group" key={kind}>
+            <h2>{flowLabels[kind]}</h2>
+            <ul>{items.map(item => <li key={`${'month' in item ? 'event' : 'flow'}:${item.id}`}><span>{item.name}</span><strong>{money(item.amount)}</strong></li>)}</ul>
+          </div>;
+        })}
+      </details> : null}
     </>
   );
 }

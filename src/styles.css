@@ -44,6 +44,67 @@
   color: var(--primary);
 }
 
+.month-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 auto 12px;
+}
+.month-control .icon-button { width: 35px; height: 35px; }
+.month-control input {
+  width: 138px;
+  min-height: 35px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+}
+.sankey-toolbar { margin-bottom: 6px; }
+.sankey-toolbar .month-control { margin-bottom: 4px; }
+.flow-basis {
+  min-height: 32px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.flow-view-toggle { display: flex; gap: 4px; }
+.flow-view-toggle button { min-height: 32px; padding: 4px 10px; border-radius: 6px; }
+.flow-view-toggle button[aria-pressed="true"] { background: var(--surface-active); color: var(--primary); }
+.flow-details { max-width: 720px; margin: 12px auto 0; border-top: 1px solid var(--border); }
+.flow-details summary { cursor: pointer; padding: 14px 0; color: var(--muted); font-size: 12px; }
+.flow-detail-group { margin-bottom: 14px; }
+.flow-detail-group h2 { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.flow-detail-group ul { margin: 0; padding: 0; list-style: none; }
+.flow-detail-group li { display: flex; gap: 16px; justify-content: space-between; padding: 8px 0; font-size: 13px; }
+.flow-detail-group li span { min-width: 0; overflow-wrap: anywhere; }
+.flow-detail-group li strong { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+.budget-equation { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.expense-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px 0; }
+.expense-comparison span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+.expense-comparison strong { font-size: 16px; overflow-wrap: anywhere; }
+.cash-coverage { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.cash-coverage strong { color: var(--ink); }
+.inactive-entry { color: var(--muted); }
+.missing-terms { display: flex; flex-wrap: wrap; gap: 12px; }
+.missing-terms .text-button { white-space: normal; text-align: left; }
+.forecast-basis { margin: 12px 0 16px; }
+.forecast-basis label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--muted); }
+.forecast-basis select { width: 100%; min-height: 40px; padding: 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--ink); font-size: 16px; }
+.forecast-basis small { display: block; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.entry-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 16px; gap: 8px; }
+.modal { overscroll-behavior: contain; }
+.modal:not(.page-panel) .modal-head { position: sticky; top: 0; z-index: 2; background: var(--surface); padding-block: 8px; }
+html:has(dialog[open]) { overflow: hidden; }
+
 .modal.page-panel {
   --panel-padding: 20px;
   width: calc(100% - 20px);
@@ -190,6 +251,23 @@
 @media (max-width: 700px) {
   .modal.page-panel { --panel-padding: 14px; }
   .panel-actions .button { padding-inline: 10px; font-size: 12px; }
+  .budget-equation { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px; gap: 16px 12px; }
+  .budget-equation > div > span { font-size: 11px; margin-bottom: 6px; }
+  .budget-equation > div > strong { font-size: 18px; }
+  .page-panel .two-column { margin-top: 16px; gap: 12px; }
+  .page-panel .panel { padding: 16px 14px; }
+  .group-head { flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .group-head > strong { max-width: 100%; overflow-wrap: anywhere; }
+  .group-empty { padding: 10px 4px; }
+  .entry-row { font-size: 13px; }
+  .entry-row > b { font-size: 13px; }
+  .imported-expense-items { padding-left: 0; }
+  .imported-expense-items .icon-button { width: 30px; height: 30px; flex-shrink: 0; }
+  .imported-expense-items li { flex-wrap: wrap; }
+  .imported-expense-items li > strong { font-size: 11px; }
+  .form-grid { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; }
+  .modal input[type="month"] { width: 100%; }
+  .modal .month-control input[type="month"] { width: 138px; }
   .entry-sheet-modal { width: calc(100% - 20px); padding: 18px 14px; }
   .entry-sheet-modal .modal-head { margin-bottom: 16px; }
 }

@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
-import { Plus, X, Wallet, Landmark, TrendingUp, CreditCard, ArrowDownLeft, ShoppingBag, PiggyBank, Trash2 } from 'lucide-react';
-import { assetLabels, flowLabels, compactMoney, money, monthLabel, currentMonth, shiftMonth, investmentProductLabels, investmentAccountLabels, type InvestmentProduct, type InvestmentAccount, type ProjectionPoint } from './model';
+import { Plus, X, Wallet, Landmark, TrendingUp, CreditCard, ArrowDownLeft, ShoppingBag, PiggyBank, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { assetLabels, flowLabels, compactMoney, money, monthLabel, currentMonth, shiftMonth, investmentProductLabels, investmentAccountLabels, type Asset, type InvestmentProduct, type InvestmentAccount, type ProjectionPoint } from './model';
 import { amountInWon, maxManWon, prepareEntry, type Entry, type EntryMode, type PreparedEntry } from './entryInput';
 
 export const assetIcons = { cash: Wallet, savings: Landmark, investment: TrendingUp, debt: CreditCard };
@@ -17,6 +17,13 @@ export function Empty({ icon, title, description, action }: { icon?: ReactNode; 
 }
 export function AddButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return <button className="button primary" onClick={onClick}><Plus size={17} />{children}</button>;
+}
+export function MonthControl({ month, change }: { month: string; change: (month: string) => void }) {
+  return <div className="month-control" role="group" aria-label="표시 월">
+    <button type="button" className="icon-button" aria-label="이전 달" disabled={month <= '1900-01'} onClick={() => change(shiftMonth(month, -1))}><ChevronLeft size={19} aria-hidden="true" /></button>
+    <input aria-label="표시 월 선택" type="month" min="1900-01" max="2200-12" value={month} onChange={event => { if (event.target.validity.valid && event.target.value) change(event.target.value); }} />
+    <button type="button" className="icon-button" aria-label="다음 달" disabled={month >= '2200-12'} onClick={() => change(shiftMonth(month, 1))}><ChevronRight size={19} aria-hidden="true" /></button>
+  </div>;
 }
 export function Modal({ title, subtitle, children, close, busy = false, className = '', notice }: { title: string; subtitle?: string; children: ReactNode; close: () => void; busy?: boolean; className?: string; notice?: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -35,6 +42,17 @@ export function Modal({ title, subtitle, children, close, busy = false, classNam
 
 export function TrendChart({ points, comparison, detailed = false, actual = false }: { points: ProjectionPoint[]; comparison?: ProjectionPoint[]; detailed?: boolean; actual?: boolean }) {
   const id = useId().replaceAll(':', '');
+  const chartRef = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(720);
+  useLayoutEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const updateWidth = () => setWidth(Math.max(240, Math.round(chart.getBoundingClientRect().width)));
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(chart);
+    return () => observer.disconnect();
+  }, []);
   const [selected, setSelected] = useState<number | null>(null);
   const index = Math.min(selected ?? points.length - 1, points.length - 1);
   const p = points[index];
@@ -45,12 +63,13 @@ export function TrendChart({ points, comparison, detailed = false, actual = fals
   const range = maximum - minimum || 1;
   const top = maximum + range * .15;
   const bottom = minimum < 0 ? minimum - range * .1 : 0;
-  const w = 720, h = 245, left = 70, right = 20, pad = 16, floor = h - 36;
+  const w = width, h = width < 480 ? 220 : 245, left = 56, right = 20, pad = 16, floor = h - 36;
   const x = (i: number) => left + i / Math.max(1, points.length - 1) * (w - left - right);
   const y = (v: number) => pad + (top - v) / (top - bottom) * (floor - pad);
   const path = (items: ProjectionPoint[]) => items.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.net).toFixed(1)}`).join(' ');
   const mainPath = path(comparison ?? points);
-  return <figure className="chart">
+  const dateTicks = width < 480 ? [0, points.length - 1] : [0, Math.floor((points.length - 1) / 2), points.length - 1];
+  return <figure className="chart" ref={chartRef}>
     <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-labelledby={`${id}-title`}>
       <title id={`${id}-title`}>{actual ? '실제 순자산 기록' : '가정에 따른 순자산 예상'}: {monthLabel(points[0].month)} {money(points[0].net)}에서 {monthLabel(points.at(-1)!.month)} {money((comparison ?? points).at(-1)!.net)}</title>
       <defs><linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6b99e4" stopOpacity=".22" /><stop offset="100%" stopColor="#6b99e4" stopOpacity="0" /></linearGradient></defs>
@@ -61,7 +80,7 @@ export function TrendChart({ points, comparison, detailed = false, actual = fals
       {points.length === 1 ? <circle cx={x(0)} cy={y(points[0].net)} r="5" fill="#2864c7" /> : null}
       <line x1={x(index)} x2={x(index)} y1={pad} y2={floor} stroke="#a6bde1" strokeDasharray="3 5" />
       <circle cx={x(index)} cy={y((comparison ?? points)[index].net)} r="5" fill="#fff" stroke="#2864c7" strokeWidth="3" />
-      {[0, Math.floor((points.length - 1) / 2), points.length - 1].filter((v, i, arr) => arr.indexOf(v) === i).map(i => <text key={i} x={x(i)} y={h - 7} textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'} className="chart-label">{i === 0 && !actual ? '현재' : `${points[i].month.slice(2, 4)}년 ${Number(points[i].month.slice(5))}월`}</text>)}
+      {dateTicks.filter((v, i, arr) => arr.indexOf(v) === i).map(i => <text key={i} x={x(i)} y={h - 7} textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'} className="chart-label">{i === 0 && !actual ? '현재' : `${points[i].month.slice(2, 4)}년 ${Number(points[i].month.slice(5))}월`}</text>)}
     </svg>
     {detailed && points.length > 1 ? <label className="chart-scrubber"><span>{actual ? '기록 월 선택' : '예상 월 선택'}</span><input type="range" min="0" max={points.length - 1} value={index} onChange={e => setSelected(Number(e.target.value))} aria-label={actual ? '기록 월 선택' : '예상 월 선택'} /></label> : null}
     {detailed ? <figcaption className="chart-detail"><div><span>{monthLabel(p.month)}{actual ? ' 기록' : ' 예상'}</span><strong>{money((comparePoint ?? p).net)}</strong></div><div><span>현금</span><b className={(comparePoint ?? p).cash < 0 ? 'negative' : ''}>{compactMoney((comparePoint ?? p).cash)}원</b></div><div><span>저축</span><b>{compactMoney((comparePoint ?? p).savings)}원</b></div><div><span>투자</span><b>{compactMoney((comparePoint ?? p).investment)}원</b></div></figcaption> : null}
@@ -82,7 +101,7 @@ function AmountInput({ label, value, change, min = 0 }: { label: string; value: 
   );
 }
 
-export function EntryForm({ mode, entry, save, remove, busy }: { mode: EntryMode; entry: Entry; save: (entry: PreparedEntry) => Promise<boolean>; remove: () => void; busy: boolean }) {
+export function EntryForm({ mode, entry, assets, save, remove, busy }: { mode: EntryMode; entry: Entry; assets: Asset[]; save: (entry: PreparedEntry) => Promise<boolean>; remove: () => void; busy: boolean }) {
   const [name, setName] = useState(entry.name);
   const [kind, setKind] = useState<string>(entry.kind);
   const [value, setValue] = useState(String(entry.amount / 10_000));
@@ -93,6 +112,8 @@ export function EntryForm({ mode, entry, save, remove, busy }: { mode: EntryMode
   const [savingMethod, setSavingMethod] = useState(existingInstallment ? 'installment' : 'regular');
   const [termMonths, setTermMonths] = useState(existingInstallment ? String(existingInstallment.termMonths) : '');
   const [annualRate, setAnnualRate] = useState(existingInstallment ? String(existingInstallment.annualRate) : '');
+  const [startMonth, setStartMonth] = useState(existingInstallment ? existingInstallment.startMonth ?? '' : thisMonth);
+  const [assetId, setAssetId] = useState(existingInstallment?.assetId ?? '');
   const existingInvestment = 'investment' in entry ? entry.investment : undefined;
   const [product, setProduct] = useState<InvestmentProduct | ''>(existingInvestment?.product ?? '');
   const [account, setAccount] = useState<InvestmentAccount | ''>(existingInvestment?.account ?? '');
@@ -118,7 +139,7 @@ export function EntryForm({ mode, entry, save, remove, busy }: { mode: EntryMode
         name,
         value,
         month,
-        installment: isInstallment ? { termMonths, annualRate } : undefined,
+        installment: isInstallment ? { termMonths, annualRate, startMonth, assetId } : undefined,
         investment: isInvestment ? { product, account, monthlyBuy: hasMonthlyBuy ? buyAmount : undefined } : undefined,
       }, entry.id);
       if (!await save(prepared)) setError('저장하지 못했어요.');
@@ -130,7 +151,7 @@ export function EntryForm({ mode, entry, save, remove, busy }: { mode: EntryMode
     <fieldset disabled={busy}>
       <label>
         분류
-        <select value={kind} onChange={e => setKind(e.target.value)}>
+        <select aria-label="분류" value={kind} onChange={e => setKind(e.target.value)}>
           {Object.entries(options).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
       </label>
@@ -175,8 +196,10 @@ export function EntryForm({ mode, entry, save, remove, busy }: { mode: EntryMode
       {hasMonthlyBuy ? <AmountInput label="월 매수액" value={buyAmount} change={setBuyAmount} min={0.0001} /> : null}
       {isInstallment ? (
         <div className="form-grid">
+          <label>시작 월<input type="month" min="1900-01" max="2200-12" required value={startMonth} onChange={e => setStartMonth(e.target.value)} /></label>
           <label>기간 (개월)<input type="number" inputMode="numeric" min="1" step="1" required value={termMonths} onChange={e => setTermMonths(e.target.value)} /></label>
           <label>연이율 (%)<input type="number" inputMode="decimal" min="0" max="100" step="any" required value={annualRate} onChange={e => setAnnualRate(e.target.value)} /></label>
+          <label>현재 잔액 계좌<select value={assetId} onChange={e => setAssetId(e.target.value)}><option value="">미연결 · 신규 납입만</option>{assets.filter(asset => asset.kind === 'savings').map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
         </div>
       ) : null}
       {mode === 'event' ? (

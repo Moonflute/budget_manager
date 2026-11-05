@@ -1,7 +1,7 @@
 import { Fragment, useState, type FormEvent } from 'react';
 import { Plus, X } from 'lucide-react';
 import { maxManWon, prepareEntry, type EntryMode, type PreparedEntry } from './entryInput';
-import { assetLabels, currentMonth, flowLabels, investmentAccountLabels, investmentProductLabels, shiftMonth, uid, type InvestmentAccount, type InvestmentProduct } from './model';
+import { assetLabels, currentMonth, flowLabels, investmentAccountLabels, investmentProductLabels, shiftMonth, uid, type Asset, type InvestmentAccount, type InvestmentProduct } from './model';
 
 const categories = {
   'flow:income': { label: '정기 수입', mode: 'flow', kind: 'income', amount: '매달 금액' },
@@ -10,7 +10,7 @@ const categories = {
   'event:expense': { label: '예정 지출', mode: 'event', kind: 'expense', amount: '예정 금액' },
   'flow:saving': { label: '일반 저축', mode: 'flow', kind: 'saving', amount: '매달 금액' },
   'flow:installment': { label: '적금', mode: 'flow', kind: 'saving', amount: '월 납입액' },
-  'flow:investment': { label: '투자 납입', mode: 'flow', kind: 'investment', amount: '매달 금액' },
+  'flow:investment': { label: '추가 투자 납입', mode: 'flow', kind: 'investment', amount: '매달 금액' },
   'asset:cash': { label: assetLabels.cash, mode: 'asset', kind: 'cash', amount: '현재 잔액' },
   'asset:savings': { label: assetLabels.savings, mode: 'asset', kind: 'savings', amount: '현재 잔액' },
   'asset:investment': { label: '투자 포트폴리오', mode: 'asset', kind: 'investment', amount: '현재 평가액' },
@@ -32,15 +32,17 @@ interface DraftRow {
   month: string;
   termMonths: string;
   annualRate: string;
+  startMonth: string;
+  assetId: string;
   product: InvestmentProduct | '';
   account: InvestmentAccount | '';
   monthlyBuy: string;
 }
 
-function emptyRow(category: EntryCategory): DraftRow {
+function emptyRow(category: EntryCategory, month: string): DraftRow {
   return {
-    id: uid(), name: '', value: '', termMonths: '', annualRate: '', product: '', account: '', monthlyBuy: '',
-    month: category === 'event:expense' ? shiftMonth(currentMonth(), 1) : currentMonth(),
+    id: uid(), name: '', value: '', termMonths: '', annualRate: '', startMonth: month, assetId: '', product: '', account: '', monthlyBuy: '',
+    month: category === 'event:expense' && month <= currentMonth() ? shiftMonth(currentMonth(), 1) : month,
   };
 }
 
@@ -48,9 +50,9 @@ function hasInput(row: DraftRow): boolean {
   return Boolean(row.name.trim() || row.value || row.termMonths || row.annualRate || row.product || row.account || row.monthlyBuy);
 }
 
-export function EntrySheet({ initialCategory, save, busy }: { initialCategory: EntryCategory; save: (entries: PreparedEntry[]) => Promise<boolean>; busy: boolean }) {
+export function EntrySheet({ initialCategory, initialMonth, assets, save, busy }: { initialCategory: EntryCategory; initialMonth: string; assets: Asset[]; save: (entries: PreparedEntry[]) => Promise<boolean>; busy: boolean }) {
   const [category, setCategory] = useState(initialCategory);
-  const [drafts, setDrafts] = useState<Partial<Record<EntryCategory, DraftRow[]>>>(() => ({ [initialCategory]: [emptyRow(initialCategory)] }));
+  const [drafts, setDrafts] = useState<Partial<Record<EntryCategory, DraftRow[]>>>(() => ({ [initialCategory]: [emptyRow(initialCategory, initialMonth)] }));
   const [error, setError] = useState('');
   const rows = drafts[category] ?? [];
   const fields = categories[category];
@@ -60,7 +62,7 @@ export function EntrySheet({ initialCategory, save, busy }: { initialCategory: E
   const hasPortfolio = category === 'asset:investment';
 
   function changeCategory(next: EntryCategory) {
-    if (!drafts[next]) setDrafts(previous => ({ ...previous, [next]: [emptyRow(next)] }));
+    if (!drafts[next]) setDrafts(previous => ({ ...previous, [next]: [emptyRow(next, initialMonth)] }));
     setCategory(next);
     setError('');
   }
@@ -72,7 +74,7 @@ export function EntrySheet({ initialCategory, save, busy }: { initialCategory: E
 
   function removeRow(id: string) {
     const remaining = rows.filter(row => row.id !== id);
-    setDrafts(previous => ({ ...previous, [category]: remaining.length ? remaining : [emptyRow(category)] }));
+    setDrafts(previous => ({ ...previous, [category]: remaining.length ? remaining : [emptyRow(category, initialMonth)] }));
     setError('');
   }
 
@@ -89,7 +91,7 @@ export function EntrySheet({ initialCategory, save, busy }: { initialCategory: E
             name: row.name,
             value: row.value,
             month: row.month,
-            installment: key === 'flow:installment' ? { termMonths: row.termMonths, annualRate: row.annualRate } : undefined,
+            installment: key === 'flow:installment' ? { termMonths: row.termMonths, annualRate: row.annualRate, startMonth: row.startMonth, assetId: row.assetId } : undefined,
             investment: key === 'asset:investment' ? { product: row.product, account: row.account, monthlyBuy: row.monthlyBuy || undefined } : undefined,
           }, row.id));
         } catch (problem) {
@@ -107,7 +109,7 @@ export function EntrySheet({ initialCategory, save, busy }: { initialCategory: E
       <fieldset disabled={busy}>
         <label className="entry-sheet-category">
           분류
-          <select value={category} onChange={event => changeCategory(event.target.value as EntryCategory)}>
+          <select aria-label="분류" value={category} onChange={event => changeCategory(event.target.value as EntryCategory)}>
             {Object.entries(categories).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
           </select>
         </label>
@@ -136,8 +138,10 @@ export function EntrySheet({ initialCategory, save, busy }: { initialCategory: E
                           </label>
                         ) : null}
                         {hasInstallment ? <>
+                          <label>시작 월<input aria-label={`${line} 시작 월`} type="month" min="1900-01" max="2200-12" value={row.startMonth} onChange={event => updateRow(row.id, { startMonth: event.target.value })} /></label>
                           <label>기간 (개월)<input aria-label={`${line} 기간 (개월)`} type="number" inputMode="numeric" min="1" step="1" value={row.termMonths} onChange={event => updateRow(row.id, { termMonths: event.target.value })} /></label>
                           <label>연이율 (%)<input aria-label={`${line} 연이율 (%)`} type="number" inputMode="decimal" min="0" max="100" step="any" value={row.annualRate} onChange={event => updateRow(row.id, { annualRate: event.target.value })} /></label>
+                          <label>현재 잔액 계좌<select aria-label={`${line} 현재 잔액 계좌`} value={row.assetId} onChange={event => updateRow(row.id, { assetId: event.target.value })}><option value="">미연결 · 신규 납입만</option>{assets.filter(asset => asset.kind === 'savings').map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
                         </> : null}
                         {hasPortfolio ? <>
                           <label>투자 상품<select aria-label={`${line} 투자 상품`} value={row.product} onChange={event => updateRow(row.id, { product: event.target.value as DraftRow['product'] })}><option value="">미분류</option>{Object.entries(investmentProductLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
@@ -154,7 +158,7 @@ export function EntrySheet({ initialCategory, save, busy }: { initialCategory: E
         </table>
         {error ? <p className="form-error entry-sheet-error" role="alert">{error}</p> : null}
         <div className="entry-sheet-actions">
-          <button type="button" className="button secondary" onClick={() => setDrafts(previous => ({ ...previous, [category]: [...(previous[category] ?? []), emptyRow(category)] }))}><Plus size={16} aria-hidden="true" />행 추가</button>
+          <button type="button" className="button secondary" onClick={() => setDrafts(previous => ({ ...previous, [category]: [...(previous[category] ?? []), emptyRow(category, initialMonth)] }))}><Plus size={16} aria-hidden="true" />행 추가</button>
           <button type="submit" className="button primary" aria-label="저장하기" disabled={!pending || busy}>{busy ? '저장 중…' : pending ? `${pending}개 저장하기` : '저장하기'}</button>
         </div>
       </fieldset>

@@ -31,6 +31,7 @@ export default function App() {
   const [data, setData] = useState<BudgetData>(emptyData);
   const [loaded, setLoaded] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
+  const [month, setMonth] = useState(currentMonth);
   const [panel, setPanel] = useState<Shortcut | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,7 +64,14 @@ export default function App() {
     if (!storageReady) { setError('기기 저장소를 사용할 수 없어요. 기록을 저장하려면 저장 권한을 확인하고 새로고침해 주세요.'); return false; }
     busyRef.current = true; setBusy(true); setError('');
     try {
-      const value = { ...next, updatedAt: new Date().toISOString() };
+      const flows = next.flows.map(flow => {
+        const assetId = flow.installment?.assetId;
+        if (!assetId || next.assets.some(asset => asset.id === assetId && asset.kind === 'savings')) return flow;
+        const installment = { ...flow.installment! };
+        delete installment.assetId;
+        return { ...flow, installment };
+      });
+      const value = { ...next, flows, updatedAt: new Date().toISOString() };
       revision.current = await writeData(value, revision.current);
       setData(value); setToast(message); return true;
     } catch (e) { setError(errorMessage(e)); return false; }
@@ -88,7 +96,17 @@ export default function App() {
     if (dialog?.type !== 'entry' || !dialog.entry) return;
     const entry = dialog.entry;
     const key = dialog.mode === 'asset' ? 'assets' : dialog.mode === 'flow' ? 'flows' : 'events';
-    setDialog({ type: 'confirm', title: '이 항목을 삭제할까요?', description: `‘${entry.name}’을 삭제해요. 이미 남긴 월별 기록은 유지돼요.`, button: '항목 삭제', danger: true, action: () => apply({ ...data, [key]: data[key].filter(x => x.id !== entry.id) }) });
+    const linked = key === 'assets' && data.flows.some(flow => flow.installment?.assetId === entry.id);
+    setDialog({ type: 'confirm', title: '이 항목을 삭제할까요?', description: `‘${entry.name}’을 삭제해요.${linked ? ' 연결된 적금의 잔액 계좌도 해제해요.' : ''}`, button: '항목 삭제', danger: true, action: () => apply({ ...data, [key]: data[key].filter(x => x.id !== entry.id) }) });
+  }
+  function removeImportedExpenses(rows: ImportedExpense[]) {
+    const ids = new Set(rows.map(row => row.id));
+    setDialog({
+      type: 'confirm', title: '가져온 지출을 삭제할까요?',
+      description: `${rows.length}건 · ${money(rows.reduce((sum, row) => sum + row.amount, 0))}`,
+      button: '지출 삭제', danger: true,
+      action: () => apply({ ...data, importedExpenses: data.importedExpenses.filter(row => !ids.has(row.id)) }, '지출 삭제 완료'),
+    });
   }
   function snapshot() {
     const month = currentMonth();
@@ -127,7 +145,10 @@ export default function App() {
     if (dialog?.type !== 'expense-import' || !rows.length) return false;
     const existing = data.importedExpenses ?? [];
     const saved = await apply({ ...data, importedExpenses: [...existing, ...rows] }, `지출 ${rows.length}건 가져오기 완료`);
-    if (saved) setDialog(null);
+    if (saved) {
+      setMonth(rows.map(row => row.date.slice(0, 7)).sort().at(-1)!);
+      setDialog(null);
+    }
     return saved;
   }
   async function persist() {
@@ -177,22 +198,22 @@ export default function App() {
         </div>
       </header>
       {!panel && !dialog ? alert : null}
-      <main id="main" className="main-content"><MonthlySankey data={data} /></main>
+      <main id="main" className="main-content"><MonthlySankey data={data} month={month} changeMonth={setMonth} /></main>
     </div>
     {!panel ? status : null}
     {(needRefresh || offlineReady) ? <div className="pwa-notice" role="status"><div><strong>{needRefresh ? '새로운 Budget Manager가 준비됐어요' : '오프라인 준비 완료'}</strong></div>{needRefresh ? <button className="button small primary" disabled={busy || !!dialog || !!panel} onClick={() => updateServiceWorker(true)}>업데이트</button> : <button className="icon-button" aria-label="오프라인 안내 닫기" onClick={() => setOfflineReady(false)}><X size={18} /></button>}</div> : null}
     {panel ? (
       <Modal title={panel.label} className="page-panel" close={() => setPanel(null)} busy={busy} notice={dialog ? null : alert}>
         {panel.id === 'assets' ? <Assets {...props} /> :
-          panel.id === 'budget' ? <Budget {...props} onImportExpenses={() => setDialog({ type: 'expense-import' })} /> :
-          panel.id === 'forecast' ? <Forecast {...props} busy={busy} saveAssumptions={a => apply({ ...data, assumptions: a })} /> :
+          panel.id === 'budget' ? <Budget {...props} month={month} changeMonth={setMonth} removeImportedExpenses={removeImportedExpenses} onImportExpenses={() => setDialog({ type: 'expense-import' })} /> :
+          panel.id === 'forecast' ? <Forecast key={JSON.stringify(data.assumptions)} {...props} busy={busy} saveAssumptions={a => apply({ ...data, assumptions: a })} /> :
           <Records data={data} snapshot={snapshot} backup={backup} restore={restore} persist={persist} persistence={persistence} install={install} canInstall={!!installPrompt} busy={busy} />}
         {status}
       </Modal>
     ) : null}
     {dialog?.type === 'sheet' ? (
       <Modal title="항목 입력" className="entry-sheet-modal" {...dialogProps}>
-        <EntrySheet initialCategory={dialog.category} save={saveEntries} busy={busy} />
+        <EntrySheet initialCategory={dialog.category} initialMonth={month} assets={data.assets} save={saveEntries} busy={busy} />
       </Modal>
     ) : null}
     {dialog?.type === 'expense-import' ? (
@@ -209,7 +230,7 @@ export default function App() {
         } 수정`}
         {...dialogProps}
       >
-        <EntryForm mode={dialog.mode} entry={dialog.entry} save={entry => saveEntries([entry])} remove={removeEntry} busy={busy} />
+        <EntryForm mode={dialog.mode} entry={dialog.entry} assets={data.assets} save={entry => saveEntries([entry])} remove={removeEntry} busy={busy} />
       </Modal>
     ) : null}
     {dialog?.type === 'confirm' ? <Modal title={dialog.title} {...dialogProps}><p className="confirm-description">{dialog.description}</p><div className="form-actions"><button className="button secondary" disabled={busy} onClick={() => setDialog(null)}>취소</button><button className={`button ${dialog.danger ? 'danger solid' : 'primary'}`} disabled={busy} onClick={async () => { if (await dialog.action()) setDialog(null); }}>{busy ? '처리 중…' : dialog.button}</button></div></Modal> : null}

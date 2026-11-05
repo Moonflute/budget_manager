@@ -11,7 +11,7 @@ export interface EntryInput {
   name: string;
   value: string;
   month?: string;
-  installment?: { termMonths: string; annualRate: string };
+  installment?: { termMonths: string; annualRate: string; startMonth: string; assetId?: string };
   investment?: { product: InvestmentProduct | ''; account: InvestmentAccount | ''; monthlyBuy?: string };
 }
 
@@ -55,6 +55,8 @@ export function prepareEntry(mode: EntryMode, kind: string, input: EntryInput, i
     entry.installment = validateInstallmentTerms({
       termMonths: Number(input.installment.termMonths),
       annualRate: input.installment.annualRate.trim() ? Number(input.installment.annualRate) : NaN,
+      startMonth: validMonth(input.installment.startMonth),
+      assetId: input.installment.assetId || undefined,
     });
   }
   return { mode, entry };

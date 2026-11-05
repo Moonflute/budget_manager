@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { balances, demoData, emptyData, makeBackup, monthlyFlow, parseBackup, project, shiftMonth, takeSnapshot, validateData } from '../src/model';
+import { balances, demoData, emptyData, flowsForMonth, makeBackup, monthlyFlow, parseBackup, project, recentExpenseAverage, recordedFlowsForMonth, shiftMonth, takeSnapshot, validateData } from '../src/model';
 
 function plan() {
   const data = emptyData();
@@ -94,5 +94,75 @@ describe('portable backup validation', () => {
     expect(() => validateData({ ...data, assets: [data.assets[0], data.assets[0]] })).toThrow();
     expect(() => validateData({ ...data, assumptions: { ...data.assumptions, investmentRate: -101 } })).toThrow();
     expect(() => validateData({ ...data, events: [{ id: 'x', name: 'x', month: '2026-13', kind: 'income', amount: 1 }] })).toThrow();
+  });
+});
+
+describe('installment schedules and monthly spending', () => {
+  it('averages only the last three recorded past months, excluding the current partial month', () => {
+    const rows = ['2026-06', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'].map((month, index) => ({
+      id: String(index), date: month + '-05', time: '', name: '지출', category: '식비', subcategory: '', amount: (index + 1) * 100_000,
+    }));
+    expect(recentExpenseAverage(rows, '2026-11')).toEqual({ months: ['2026-10', '2026-09', '2026-08'], amount: 300_000 });
+    expect(recentExpenseAverage([], '2026-11')).toEqual({ months: [], amount: 0 });
+  });
+  it('limits payments to the selected month and credits simple interest at maturity', () => {
+    const data = emptyData();
+    data.assumptions.savingsRate = 50;
+    data.flows = [
+      { id: 'income', name: '급여', kind: 'income', amount: 200_000 },
+      { id: 'saving', name: '적금', kind: 'saving', amount: 100_000, installment: { termMonths: 3, annualRate: 12, startMonth: '2027-01' } },
+    ];
+    expect(monthlyFlow(data, '2026-12').saving).toBe(0);
+    expect(monthlyFlow(data, '2027-03').saving).toBe(100_000);
+    expect(monthlyFlow(data, '2027-04').saving).toBe(0);
+    const points = project(data, 5, {}, '2026-12');
+    expect(points[1]).toMatchObject({ savings: 100_000, cash: 100_000, net: 200_000 });
+    expect(points[3]).toMatchObject({ savings: 300_000, cash: 300_000 });
+    expect(points[4]).toMatchObject({ savings: 0, cash: 806_000, net: 806_000 });
+    expect(points[5].net).toBe(1_006_000);
+  });
+
+  it('counts a linked opening principal once and pays only projected interest', () => {
+    const data = emptyData();
+    data.assets = [{ id: 'deposit', kind: 'savings', name: '적금 계좌', amount: 500_000 }];
+    data.flows = [{ id: 'saving', name: '적금', kind: 'saving', amount: 100_000, installment: { termMonths: 4, annualRate: 12, startMonth: '2026-12', assetId: 'deposit' } }];
+    data.assumptions.savingsRate = 50;
+    const before = structuredClone(data);
+    const points = project(data, 4, {}, '2026-12');
+    expect(points[0].net).toBe(500_000);
+    expect(points[1]).toMatchObject({ savings: 600_000, cash: -100_000, net: 500_000 });
+    expect(points[4]).toMatchObject({ savings: 0, cash: 521_000, net: 521_000 });
+    expect(data).toEqual(before);
+    expect(parseBackup(makeBackup(data))).toEqual(data);
+  });
+
+  it('keeps undated legacy installments readable and never liquidates old maturities twice', () => {
+    const data = emptyData();
+    data.flows = [{ id: 'old', kind: 'saving', name: '기존 적금', amount: 100_000, installment: { termMonths: 12, annualRate: 3 } }];
+    expect(validateData(data).flows[0].installment?.startMonth).toBeUndefined();
+    expect(project(data, 13, {}, '2026-12')[13].savings).toBe(1_300_000);
+    data.assets = [{ id: 'deposit', kind: 'savings', name: '잔액', amount: 500_000 }];
+    data.flows[0].installment = { termMonths: 1, annualRate: 12, startMonth: '2026-01', assetId: 'deposit' };
+    expect(project(data, 1, {}, '2026-12')[1]).toMatchObject({ savings: 500_000, cash: 0 });
+  });
+
+  it('rejects invalid start months, missing accounts and duplicate principal links', () => {
+    const data = emptyData();
+    data.assets = [{ id: 'deposit', kind: 'savings', name: '잔액', amount: 500_000 }];
+    const flow = { id: 'saving', name: '적금', kind: 'saving' as const, amount: 100_000, installment: { termMonths: 12, annualRate: 3, startMonth: '2026-11', assetId: 'deposit' } };
+    expect(() => validateData({ ...data, flows: [flow, { ...flow, id: 'other' }] })).toThrow('여러 적금');
+    expect(() => validateData({ ...data, assets: [], flows: [flow] })).toThrow('연결할');
+    expect(() => validateData({ ...data, flows: [{ ...flow, installment: { ...flow.installment, startMonth: '2026-13' } }] })).toThrow();
+  });
+
+  it('keeps imported expense totals and recurring plans separate for the selected month', () => {
+    const data = plan();
+    data.events = [{ id: 'bonus', kind: 'income', name: '성과급', amount: 500_000, month: '2026-10' }];
+    data.importedExpenses = [{ id: 'receipt', date: '2026-10-05', time: '', name: '식사', amount: 20_000, category: '식비', subcategory: '' }];
+    const planned = monthlyFlow({ assets: data.assets, flows: flowsForMonth(data, '2026-10') });
+    const recorded = monthlyFlow({ assets: data.assets, flows: recordedFlowsForMonth(data, '2026-10') });
+    expect(planned).toMatchObject({ income: 3_500_000, expense: 1_800_000 });
+    expect(recorded).toMatchObject({ income: 3_500_000, expense: 20_000 });
+    expect(recordedFlowsForMonth(data, '2026-11')).toEqual(flowsForMonth(data, '2026-11'));
   });
 });
