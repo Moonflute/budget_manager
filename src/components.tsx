@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type FormEvent } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
 import { Plus, X, Wallet, Landmark, TrendingUp, CreditCard, ArrowDownLeft, ShoppingBag, PiggyBank, Trash2 } from 'lucide-react';
 import { assetLabels, flowLabels, compactMoney, money, monthLabel, currentMonth, shiftMonth, investmentProductLabels, investmentAccountLabels, type InvestmentProduct, type InvestmentAccount, type ProjectionPoint } from './model';
 import { amountInWon, maxManWon, prepareEntry, type Entry, type EntryMode, type PreparedEntry } from './entryInput';
@@ -18,12 +18,17 @@ export function Empty({ icon, title, description, action }: { icon?: ReactNode; 
 export function AddButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return <button className="button primary" onClick={onClick}><Plus size={17} />{children}</button>;
 }
-export function Modal({ title, subtitle, children, close, busy = false, className = '' }: { title: string; subtitle?: string; children: ReactNode; close: () => void; busy?: boolean; className?: string }) {
+export function Modal({ title, subtitle, children, close, busy = false, className = '', notice }: { title: string; subtitle?: string; children: ReactNode; close: () => void; busy?: boolean; className?: string; notice?: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   const heading = useId();
-  useEffect(() => { ref.current?.showModal(); }, []);
+  useLayoutEffect(() => {
+    const dialog = ref.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
   return <dialog ref={ref} className={`modal ${className}`} aria-labelledby={heading} onCancel={event => { event.preventDefault(); if (!busy) close(); }}>
     <div className="modal-head"><div><h2 id={heading}>{title}</h2>{subtitle ? <p>{subtitle}</p> : null}</div><button className="icon-button" aria-label="닫기" disabled={busy} onClick={close}><X size={20} /></button></div>
+    {notice}
     {children}
   </dialog>;
 }

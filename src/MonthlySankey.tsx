@@ -5,7 +5,7 @@ import { SankeyChart, type SankeySeriesOption } from 'echarts/charts';
 import { TooltipComponent, type TooltipComponentOption } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
 import { ChevronLeft, ChevronRight, GitFork } from 'lucide-react';
-import { compactMoney, currentMonth, flowLabels, flowsForMonth, money, monthLabel, monthlyFlow, shiftMonth, type BudgetData, type Flow } from './model';
+import { compactMoney, currentMonth, exampleFlows, flowLabels, recordedFlowsForMonth, money, monthLabel, monthlyFlow, shiftMonth, type BudgetData, type Flow } from './model';
 
 echarts.use([SankeyChart, TooltipComponent, SVGRenderer]);
 
@@ -57,7 +57,7 @@ function chartNode(part: ChartPart, depth: number, position: 'left' | 'right' | 
   };
 }
 
-function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>) {
+function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>, expenseLabel: string) {
   const flow = monthlyFlow({ flows, assets });
   if (!flow.income && !flow.expense && !flow.saving && !flow.investment) return null;
   const deficit = Math.max(0, -flow.cash);
@@ -71,7 +71,7 @@ function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>) 
   };
   const branches = [
     {
-      id: 'expenses', name: flowLabels.expense, value: flow.expense, color: colors.expense,
+      id: 'expenses', name: expenseLabel, value: flow.expense, color: colors.expense,
       items: visibleItems(flows, 'expense'),
     },
     {
@@ -147,15 +147,20 @@ function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>) 
   return { option, description };
 }
 
-export function MonthlySankey({ flows, assets, events }: Pick<BudgetData, 'flows' | 'assets' | 'events'>) {
+export function MonthlySankey({ data }: { data: BudgetData }) {
   const [month, setMonth] = useState(() => currentMonth());
-  const chart = useMemo(() => monthlySankey({ flows: flowsForMonth({ flows, events }, month), assets }), [flows, assets, events, month]);
+  const { flows, assets, events, importedExpenses, history } = data;
+  const example = month === currentMonth() && !(flows.length || assets.length || events.length || importedExpenses.length || history.length);
+  const chart = useMemo(() => {
+    if (example) return monthlySankey({ flows: exampleFlows(), assets }, flowLabels.expense);
+    const actual = importedExpenses.some(row => row.date.slice(0, 7) === month);
+    return monthlySankey({ flows: recordedFlowsForMonth({ flows, events, importedExpenses }, month), assets }, actual ? '실제 지출' : flowLabels.expense);
+  }, [example, flows, assets, events, importedExpenses, month]);
 
   return (
     <section className="min-w-0 rounded-[14px] border border-solid border-[#dce5f1] bg-white px-3 py-3 sm:px-6 sm:py-5">
-      <header className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-        <h1 className="text-xl font-semibold text-[#1c304d] sm:text-2xl">월 현금 흐름</h1>
-        <div className="ml-auto flex items-center" role="group" aria-label="표시 월">
+      <header className="mb-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center">
+        <div className="col-start-2 flex items-center" role="group" aria-label="표시 월">
           <button type="button" className="icon-button h-11! w-11!" aria-label="이전 달" onClick={() => setMonth(value => shiftMonth(value, -1))}>
             <ChevronLeft size={19} aria-hidden="true" />
           </button>
@@ -166,6 +171,7 @@ export function MonthlySankey({ flows, assets, events }: Pick<BudgetData, 'flows
             <ChevronRight size={19} aria-hidden="true" />
           </button>
         </div>
+        {example ? <span className="chip col-start-3 justify-self-end">예시</span> : null}
       </header>
       <div className="h-[clamp(340px,calc(100svh_-_305px),440px)] w-full md:h-[clamp(410px,56vh,620px)]">
         {chart ? (

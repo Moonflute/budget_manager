@@ -13,12 +13,14 @@ export interface Asset { id: string; name: string; kind: AssetKind; amount: numb
 export interface InstallmentTerms { termMonths: number; annualRate: number }
 export interface Flow { id: string; name: string; kind: FlowKind; amount: number; installment?: InstallmentTerms }
 export interface PlannedEvent { id: string; name: string; month: string; kind: 'income' | 'expense'; amount: number }
+export interface ImportedExpense { id: string; date: string; time: string; name: string; category: string; subcategory: string; amount: number }
 export interface Snapshot { id: string; month: string; recordedAt: string; cash: number; savings: number; investment: number; debt: number; income: number; expense: number }
 export interface BudgetData {
   version: 1;
   assets: Asset[];
   flows: Flow[];
   events: PlannedEvent[];
+  importedExpenses: ImportedExpense[];
   history: Snapshot[];
   assumptions: { savingsRate: number; investmentRate: number; target: number };
   updatedAt: string | null;
@@ -76,6 +78,31 @@ export function flowsForMonth({ flows, events }: Pick<BudgetData, 'flows' | 'eve
   return [...flows, ...events.filter(event => event.month === month)];
 }
 
+export function expenseGroups(expenses: ImportedExpense[], month?: string) {
+  const groups = new Map<string, { name: string; amount: number; items: ImportedExpense[] }>();
+  for (const expense of expenses) {
+    if (month && expense.date.slice(0, 7) !== month) continue;
+    let group = groups.get(expense.category);
+    if (!group) {
+      group = { name: expense.category, amount: 0, items: [] };
+      groups.set(expense.category, group);
+    }
+    group.amount += expense.amount;
+    group.items.push(expense);
+  }
+  return [...groups.values()].sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'ko'));
+}
+
+export function recordedFlowsForMonth(data: Pick<BudgetData, 'flows' | 'events' | 'importedExpenses'>, month: string): Flow[] {
+  const plan = flowsForMonth(data, month);
+  const groups = expenseGroups(data.importedExpenses ?? [], month);
+  if (!groups.length) return plan;
+  return [
+    ...plan.filter(flow => flow.kind !== 'expense'),
+    ...groups.map((group, index): Flow => ({ id: `imported-expense:${index}`, kind: 'expense', name: group.name, amount: group.amount })),
+  ];
+}
+
 // Each step is the end of the NEXT month. Opening balances already represent now.
 // Contributions occur at month end; transfers change allocation, not net worth.
 export function project(data: BudgetData, months: number, scenario: Scenario = {}, start = currentMonth()): ProjectionPoint[] {
@@ -103,12 +130,23 @@ export function project(data: BudgetData, months: number, scenario: Scenario = {
 
 export function takeSnapshot(data: BudgetData, month = currentMonth()): Snapshot {
   const b = balances(data.assets);
-  const f = monthlyFlow({ assets: data.assets, flows: flowsForMonth(data, month) });
+  const f = monthlyFlow({ assets: data.assets, flows: recordedFlowsForMonth(data, month) });
   return { id: uid(), month, recordedAt: new Date().toISOString(), cash: b.cash, savings: b.savings, investment: b.investment, debt: b.debt, income: f.income, expense: f.expense };
 }
 
 export function emptyData(): BudgetData {
-  return { version: 1, assets: [], flows: [], events: [], history: [], assumptions: { savingsRate: 0, investmentRate: 0, target: 100_000_000 }, updatedAt: null, lastBackupAt: null };
+  return { version: 1, assets: [], flows: [], events: [], importedExpenses: [], history: [], assumptions: { savingsRate: 0, investmentRate: 0, target: 100_000_000 }, updatedAt: null, lastBackupAt: null };
+}
+export function exampleFlows(): Flow[] {
+  return [
+    { id: 'demo-income', name: '급여', kind: 'income', amount: 3_200_000 },
+    { id: 'demo-side-income', name: '부수입', kind: 'income', amount: 300_000 },
+    { id: 'demo-home', name: '주거·공과금', kind: 'expense', amount: 650_000 },
+    { id: 'demo-food', name: '식비·생활비', kind: 'expense', amount: 650_000 },
+    { id: 'demo-etc', name: '교통·구독', kind: 'expense', amount: 250_000 },
+    { id: 'demo-save', name: '목표 저축', kind: 'saving', amount: 900_000 },
+    { id: 'demo-invest', name: '매달 투자', kind: 'investment', amount: 600_000 },
+  ];
 }
 export function demoData(): BudgetData {
   const d = emptyData();
@@ -118,15 +156,7 @@ export function demoData(): BudgetData {
     { id: 'demo-emergency', name: '비상금 예금', kind: 'savings', amount: 10_000_000 },
     { id: 'demo-investment', name: '장기 투자', kind: 'investment', amount: 12_500_000 },
   ];
-  d.flows = [
-    { id: 'demo-income', name: '급여', kind: 'income', amount: 3_200_000 },
-    { id: 'demo-side-income', name: '부수입', kind: 'income', amount: 300_000 },
-    { id: 'demo-home', name: '주거·공과금', kind: 'expense', amount: 650_000 },
-    { id: 'demo-food', name: '식비·생활비', kind: 'expense', amount: 650_000 },
-    { id: 'demo-etc', name: '교통·구독', kind: 'expense', amount: 250_000 },
-    { id: 'demo-save', name: '목표 저축', kind: 'saving', amount: 900_000 },
-    { id: 'demo-invest', name: '매달 투자', kind: 'investment', amount: 600_000 },
-  ];
+  d.flows = exampleFlows();
   d.assumptions = { savingsRate: 2.5, investmentRate: 4, target: 100_000_000 };
   d.history = Array.from({ length: 6 }, (_, i) => ({ id: `demo-snapshot-${i}`, month: shiftMonth(currentMonth(), i - 5), recordedAt: new Date().toISOString(), cash: 4_200_000, savings: 23_500_000 + i * 900_000, investment: 9_500_000 + i * 600_000, debt: 0, income: 3_500_000, expense: 1_550_000 }));
   return d;
@@ -164,8 +194,8 @@ export function validMonth(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value) || value < '1900-01' || value > '2200-12') throw new Error('월 형식이 올바르지 않아요.');
   return value;
 }
-function list<T extends { id: string }>(value: unknown, parse: (item: Record<string, unknown>) => T): T[] {
-  if (!Array.isArray(value) || value.length > 1000) throw new Error('백업 항목 수가 올바르지 않아요.');
+function list<T extends { id: string }>(value: unknown, parse: (item: Record<string, unknown>) => T, limit = 1000): T[] {
+  if (!Array.isArray(value) || value.length > limit) throw new Error('백업 항목 수가 올바르지 않아요.');
   const result = value.map(item => parse(obj(item)));
   if (new Set(result.map(x => x.id)).size !== result.length) throw new Error('중복된 항목 ID가 있어요.');
   return result;
@@ -173,6 +203,39 @@ function list<T extends { id: string }>(value: unknown, parse: (item: Record<str
 function kind<T extends string>(value: unknown, options: readonly T[]): T {
   if (!options.includes(value as T)) throw new Error('알 수 없는 항목 분류가 있어요.');
   return value as T;
+}
+export const maxImportedExpenses = 10_000;
+export const maxBackupBytes = 10_000_000;
+
+export function validateImportedExpense(value: unknown): ImportedExpense {
+  const item = obj(value);
+  const date = str(item.date, 10);
+  const dateValue = new Date(`${date}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(dateValue.getTime()) || dateValue.toISOString().slice(0, 10) !== date) {
+    throw new Error('지출일이 올바르지 않아요.');
+  }
+  validMonth(date.slice(0, 7));
+  if (typeof item.time !== 'string' || (item.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.time))) throw new Error('지출시간이 올바르지 않아요.');
+  if (typeof item.subcategory !== 'string' || item.subcategory.length > 60) throw new Error('세부카테고리를 확인해 주세요.');
+  const valueInWon = amount(item.amount);
+  if (!valueInWon) throw new Error('지출금액이 올바르지 않아요.');
+  return { id: str(item.id), date, time: item.time, name: str(item.name, 120).trim(), category: str(item.category, 60).trim(), subcategory: item.subcategory.trim(), amount: valueInWon };
+}
+
+export function newImportedExpenses(rows: ImportedExpense[], existing: ImportedExpense[]): ImportedExpense[] {
+  const key = (row: ImportedExpense) => JSON.stringify([row.date, row.time, row.name, row.category, row.subcategory, row.amount]);
+  const counts = new Map<string, number>();
+  for (const row of existing) {
+    const signature = key(row);
+    counts.set(signature, (counts.get(signature) ?? 0) + 1);
+  }
+  return rows.filter(row => {
+    const signature = key(row);
+    const count = counts.get(signature) ?? 0;
+    if (!count) return true;
+    counts.set(signature, count - 1);
+    return false;
+  });
 }
 export function validateData(value: unknown): BudgetData {
   const d = obj(value);
@@ -204,13 +267,14 @@ export function validateData(value: unknown): BudgetData {
       return flow;
     }),
     events: list(d.events, x => ({ id: str(x.id), name: str(x.name, 40), month: validMonth(x.month), kind: kind(x.kind, ['income', 'expense'] as const), amount: amount(x.amount) })),
+    importedExpenses: d.importedExpenses === undefined ? [] : list(d.importedExpenses, validateImportedExpense, maxImportedExpenses),
     history,
     assumptions: { savingsRate: rate(a.savingsRate), investmentRate: rate(a.investmentRate), target: amount(a.target) },
     updatedAt: timestamp(d.updatedAt), lastBackupAt: timestamp(d.lastBackupAt),
   };
 }
 export function parseBackup(text: string): BudgetData {
-  if (text.length > 2_000_000) throw new Error('백업 파일은 2MB 이하로 선택해 주세요.');
+  if (text.length > maxBackupBytes) throw new Error('백업 파일은 10MB 이하로 선택해 주세요.');
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { throw new Error('JSON 백업 파일을 읽을 수 없어요.'); }
   const envelope = obj(parsed);

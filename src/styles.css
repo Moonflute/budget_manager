@@ -36,17 +36,8 @@
 .topbar-actions .topbar-shortcut {
   width: 44px;
   min-height: 44px;
-  flex-direction: column;
-  gap: 3px;
-  padding: 3px;
-  font-size: 9px;
-  line-height: 1;
+  padding: 0;
   color: var(--primary);
-}
-
-.topbar-shortcut[aria-current="page"] {
-  background: var(--surface-active);
-  border-color: var(--focus);
 }
 
 .topbar-actions .topbar-input {
@@ -54,6 +45,53 @@
   min-height: 44px;
   font-size: 13px;
 }
+
+.modal.page-panel {
+  --panel-padding: 20px;
+  width: calc(100% - 20px);
+  max-width: 1100px;
+  max-height: calc(100dvh - 24px);
+  padding: 0 var(--panel-padding) var(--panel-padding);
+  overscroll-behavior: contain;
+}
+
+.page-panel .modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  align-items: center;
+  margin: 0 calc(-1 * var(--panel-padding)) 14px;
+  padding: 8px var(--panel-padding);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.page-panel .modal-head .icon-button {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+}
+
+.modal > .error-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.page-panel > .error-banner { top: 61px; }
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.panel-actions .button, .expense-import .button { min-height: 44px; }
 
 .entry-row .entry-detail {
   display: block;
@@ -129,7 +167,31 @@
 
 .entry-sheet-actions .button { min-height: 44px; }
 
+.expense-preview { margin-top: 14px; }
+.expense-period { color: var(--muted); font-size: 12px; margin: 10px 0; }
+.expense-categories { margin: 8px 0 14px; }
+.expense-preview-row, .expense-categories summary, .imported-expense-items li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.expense-preview-row, .expense-categories summary { cursor: pointer; }
+.expense-preview-row input { width: 18px; height: 18px; accent-color: var(--primary); }
+.expense-preview-row span, .expense-categories summary span, .imported-expense-items li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.expense-categories strong { white-space: nowrap; }
+.expense-categories small { display: block; margin-top: 3px; font-size: 10px; color: var(--muted); }
+.expense-categories summary::before { content: '›'; color: var(--primary); font-size: 18px; }
+.expense-categories details[open] summary::before { transform: rotate(90deg); }
+.imported-expense-items { list-style: none; margin: 0; padding: 0 0 0 16px; }
+.expense-month { min-height: 36px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 16px; }
+
 @media (max-width: 700px) {
+  .modal.page-panel { --panel-padding: 14px; }
+  .panel-actions .button { padding-inline: 10px; font-size: 12px; }
   .entry-sheet-modal { width: calc(100% - 20px); padding: 18px 14px; }
   .entry-sheet-modal .modal-head { margin-bottom: 16px; }
 }
@@ -151,7 +213,5 @@
 }
 
 @media (max-width: 360px) {
-  .topbar-actions .topbar-input { width: 44px; min-width: 44px; padding: 0; }
-  .topbar-input-label { display: none; }
   .save-state-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }

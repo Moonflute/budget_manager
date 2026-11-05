@@ -1,23 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
-import { ChartNoAxesCombined, Check, CircleAlert, CloudOff, History, GitFork, Plus, SlidersHorizontal, Wallet, X, RefreshCw } from 'lucide-react';
+import { ChartNoAxesCombined, Check, CircleAlert, CloudOff, History, Plus, SlidersHorizontal, Wallet, X, RefreshCw } from 'lucide-react';
 import { Brand, EntryForm, Modal } from './components';
 import { EntrySheet, entryCategory, type EntryCategory } from './EntrySheet';
+import { ExpenseImport } from './ExpenseImport';
 import type { Entry, EntryMode, PreparedEntry } from './entryInput';
-import { Assets, Budget, Forecast, Records, type Page, type ViewProps } from './views';
+import { Assets, Budget, Forecast, Records, type ViewProps } from './views';
 import { MonthlySankey } from './MonthlySankey';
-import { balances, currentMonth, emptyData, makeBackup, money, parseBackup, takeSnapshot, type BudgetData } from './model';
+import { balances, currentMonth, emptyData, makeBackup, maxBackupBytes, money, parseBackup, takeSnapshot, type BudgetData, type ImportedExpense } from './model';
 import { readData, writeData } from './storage';
 
-type DialogState = { type: 'sheet'; category: EntryCategory } | { type: 'entry'; mode: EntryMode; entry: Entry } | { type: 'confirm'; title: string; description: string; action: () => Promise<boolean>; button: string; danger?: boolean } | { type: 'install' };
+type DialogState = { type: 'sheet'; category: EntryCategory } | { type: 'entry'; mode: EntryMode; entry: Entry } | { type: 'expense-import' } | { type: 'confirm'; title: string; description: string; action: () => Promise<boolean>; button: string; danger?: boolean } | { type: 'install' };
 interface InstallPrompt extends Event { prompt(): Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
-const shortcuts: { id: Page; label: string; shortLabel: string; icon: typeof Wallet }[] = [
-  { id: 'overview', label: '월 현금 흐름', shortLabel: '홈', icon: GitFork },
-  { id: 'assets', label: '나의 자산', shortLabel: '자산', icon: Wallet },
-  { id: 'budget', label: '월 예산', shortLabel: '예산', icon: SlidersHorizontal },
-  { id: 'records', label: '기록과 백업', shortLabel: '백업', icon: History },
-  { id: 'forecast', label: '자산 예측', shortLabel: '예측', icon: ChartNoAxesCombined },
-];
+const shortcuts = [
+  { id: 'assets', label: '나의 자산', icon: Wallet },
+  { id: 'budget', label: '월 예산', icon: SlidersHorizontal },
+  { id: 'records', label: '기록과 백업', icon: History },
+  { id: 'forecast', label: '자산 예측', icon: ChartNoAxesCombined },
+] as const;
+type Shortcut = (typeof shortcuts)[number];
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : '작업을 완료하지 못했어요. 다시 시도해 주세요.';
 
 function upsert<T extends Entry>(entries: T[], entry: T) {
@@ -30,8 +31,7 @@ export default function App() {
   const [data, setData] = useState<BudgetData>(emptyData);
   const [loaded, setLoaded] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
-  const [page, setPage] = useState<Page>('overview');
-  const [forecastVisit, setForecastVisit] = useState(0);
+  const [panel, setPanel] = useState<Shortcut | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -70,11 +70,6 @@ export default function App() {
     finally { busyRef.current = false; setBusy(false); }
   }, [storageReady]);
 
-  function go(next: Page) { setPage(next); window.scrollTo({ top: 0, behavior: 'instant' }); }
-  function openForecast() {
-    setForecastVisit(visit => visit + 1);
-    go('forecast');
-  }
   function add(mode: EntryMode, kind?: string) { setDialog({ type: 'sheet', category: entryCategory(mode, kind) }); }
   function edit(mode: EntryMode, entry: Entry) { setDialog({ type: 'entry', mode, entry }); }
   async function saveEntries(entries: PreparedEntry[]) {
@@ -117,16 +112,23 @@ export default function App() {
   }
   async function restore(file: File) {
     try {
-      if (file.size > 2_000_000) throw new Error('2MB 이하의 백업 파일을 선택해 주세요.');
+      if (file.size > maxBackupBytes) throw new Error('10MB 이하의 백업 파일을 선택해 주세요.');
       const imported = parseBackup(await file.text());
       setDialog({
         type: 'confirm',
         title: '백업에서 기록을 불러올까요?',
-        description: `자산 ${imported.assets.length}개 · 월 예산 ${imported.flows.length}개 · 일회성 항목 ${imported.events.length}개 · 월별 기록 ${imported.history.length}개. 현재 기기의 기록 전체를 교체해요.`,
+        description: `자산 ${imported.assets.length}개 · 월 예산 ${imported.flows.length}개 · 일회성 항목 ${imported.events.length}개 · 가져온 지출 ${imported.importedExpenses.length}건 · 월별 기록 ${imported.history.length}개. 현재 기기의 기록 전체를 교체해요.`,
         button: '백업으로 교체',
         action: () => apply(imported, '백업에서 기록을 복원했어요.'),
       });
     } catch (e) { setError(errorMessage(e)); }
+  }
+  async function saveImportedExpenses(rows: ImportedExpense[]) {
+    if (dialog?.type !== 'expense-import' || !rows.length) return false;
+    const existing = data.importedExpenses ?? [];
+    const saved = await apply({ ...data, importedExpenses: [...existing, ...rows] }, `지출 ${rows.length}건 가져오기 완료`);
+    if (saved) setDialog(null);
+    return saved;
   }
   async function persist() {
     if (!navigator.storage?.persist) { setPersistence('이 브라우저에서는 보존 요청을 지원하지 않아요.'); return; }
@@ -139,11 +141,14 @@ export default function App() {
   const props: ViewProps = { data, add, edit };
   const saveStatus = busy ? '저장 중' : !storageReady ? '저장 불가' : !online ? '오프라인' : data.updatedAt ? '기기에 저장됨' : '기기 저장 준비됨';
   if (!loaded) return <div className="loading-screen"><Brand /><span className="loading-dot" /><p>불러오는 중…</p></div>;
+  const alert = error ? <div className="error-banner" role="alert"><CircleAlert size={19} /><span>{error}</span><button className="text-button" onClick={() => window.location.reload()}>새로고침</button><button className="icon-button" aria-label="오류 알림 닫기" onClick={() => setError('')}><X size={17} /></button></div> : null;
+  const status = toast ? <div className="toast" role="status"><Check size={17} />{toast}</div> : null;
+  const dialogProps = { close: () => setDialog(null), busy, notice: alert };
   return <div className="app-shell">
     <a className="skip-link" href="#main">본문으로 이동</a>
     <div className="workspace">
       <header className="topbar">
-        <a className="topbar-brand brand-link" href="#" onClick={event => { event.preventDefault(); go('overview'); }} aria-label="Budget Manager 홈"><Brand /></a>
+        <div className="topbar-brand"><Brand /></div>
         <div className="topbar-actions">
           <span className={`save-state ${error ? 'negative' : ''}`} title={saveStatus} aria-live="polite">
             {!online ? <CloudOff size={15} aria-hidden="true" /> : busy ? <RefreshCw size={14} className="spin" aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
@@ -158,27 +163,41 @@ export default function App() {
                   className="button secondary topbar-shortcut"
                   aria-label={item.label}
                   title={item.label}
-                  aria-current={page === item.id ? 'page' : undefined}
-                  onClick={item.id === 'forecast' ? openForecast : () => go(item.id)}
+                  aria-haspopup="dialog"
+                  onClick={() => setPanel(item)}
                 >
-                  <item.icon size={17} aria-hidden="true" /><span>{item.shortLabel}</span>
+                  <item.icon size={19} aria-hidden="true" />
                 </button>
               ))}
             </nav>
             <button type="button" className="button primary topbar-input" disabled={busy} aria-label="입력" title="입력" aria-haspopup="dialog" onClick={() => add('flow')}>
-              <Plus size={17} aria-hidden="true" /><span className="topbar-input-label">입력</span>
+              <Plus size={17} aria-hidden="true" />입력
             </button>
           </div>
         </div>
       </header>
-      {error ? <div className="error-banner" role="alert"><CircleAlert size={19} /><span>{error}</span><button className="text-button" onClick={() => window.location.reload()}>새로고침</button><button className="icon-button" aria-label="오류 알림 닫기" onClick={() => setError('')}><X size={17} /></button></div> : null}
-      <main id="main" className="main-content" key={page}>{page === 'overview' ? <MonthlySankey flows={data.flows} assets={data.assets} events={data.events} /> : page === 'assets' ? <Assets {...props} /> : page === 'budget' ? <Budget {...props} /> : page === 'forecast' ? <Forecast key={forecastVisit} {...props} busy={busy} saveAssumptions={a => apply({ ...data, assumptions: a })} /> : <Records data={data} snapshot={snapshot} backup={backup} restore={restore} persist={persist} persistence={persistence} install={install} canInstall={!!installPrompt} busy={busy} />}</main>
+      {!panel && !dialog ? alert : null}
+      <main id="main" className="main-content"><MonthlySankey data={data} /></main>
     </div>
-    {toast ? <div className="toast" role="status"><Check size={17} />{toast}</div> : null}
-    {(needRefresh || offlineReady) ? <div className="pwa-notice" role="status"><div><strong>{needRefresh ? '새로운 Budget Manager가 준비됐어요' : '오프라인 준비 완료'}</strong></div>{needRefresh ? <button className="button small primary" disabled={busy || !!dialog} onClick={() => updateServiceWorker(true)}>업데이트</button> : <button className="icon-button" aria-label="오프라인 안내 닫기" onClick={() => setOfflineReady(false)}><X size={18} /></button>}</div> : null}
+    {!panel ? status : null}
+    {(needRefresh || offlineReady) ? <div className="pwa-notice" role="status"><div><strong>{needRefresh ? '새로운 Budget Manager가 준비됐어요' : '오프라인 준비 완료'}</strong></div>{needRefresh ? <button className="button small primary" disabled={busy || !!dialog || !!panel} onClick={() => updateServiceWorker(true)}>업데이트</button> : <button className="icon-button" aria-label="오프라인 안내 닫기" onClick={() => setOfflineReady(false)}><X size={18} /></button>}</div> : null}
+    {panel ? (
+      <Modal title={panel.label} className="page-panel" close={() => setPanel(null)} busy={busy} notice={dialog ? null : alert}>
+        {panel.id === 'assets' ? <Assets {...props} /> :
+          panel.id === 'budget' ? <Budget {...props} onImportExpenses={() => setDialog({ type: 'expense-import' })} /> :
+          panel.id === 'forecast' ? <Forecast {...props} busy={busy} saveAssumptions={a => apply({ ...data, assumptions: a })} /> :
+          <Records data={data} snapshot={snapshot} backup={backup} restore={restore} persist={persist} persistence={persistence} install={install} canInstall={!!installPrompt} busy={busy} />}
+        {status}
+      </Modal>
+    ) : null}
     {dialog?.type === 'sheet' ? (
-      <Modal title="항목 입력" className="entry-sheet-modal" close={() => setDialog(null)} busy={busy}>
+      <Modal title="항목 입력" className="entry-sheet-modal" {...dialogProps}>
         <EntrySheet initialCategory={dialog.category} save={saveEntries} busy={busy} />
+      </Modal>
+    ) : null}
+    {dialog?.type === 'expense-import' ? (
+      <Modal title="엑셀 지출 가져오기" {...dialogProps}>
+        <ExpenseImport existing={data.importedExpenses ?? []} save={saveImportedExpenses} busy={busy} />
       </Modal>
     ) : null}
     {dialog?.type === 'entry' ? (
@@ -188,13 +207,12 @@ export default function App() {
             ? '비정기 수입'
             : { asset: '자산 항목', flow: '월 예산 항목', event: '예정 항목' }[dialog.mode]
         } 수정`}
-        close={() => setDialog(null)}
-        busy={busy}
+        {...dialogProps}
       >
         <EntryForm mode={dialog.mode} entry={dialog.entry} save={entry => saveEntries([entry])} remove={removeEntry} busy={busy} />
       </Modal>
     ) : null}
-    {dialog?.type === 'confirm' ? <Modal title={dialog.title} close={() => setDialog(null)} busy={busy}><p className="confirm-description">{dialog.description}</p><div className="form-actions"><button className="button secondary" disabled={busy} onClick={() => setDialog(null)}>취소</button><button className={`button ${dialog.danger ? 'danger solid' : 'primary'}`} disabled={busy} onClick={async () => { if (await dialog.action()) setDialog(null); }}>{busy ? '처리 중…' : dialog.button}</button></div></Modal> : null}
+    {dialog?.type === 'confirm' ? <Modal title={dialog.title} {...dialogProps}><p className="confirm-description">{dialog.description}</p><div className="form-actions"><button className="button secondary" disabled={busy} onClick={() => setDialog(null)}>취소</button><button className={`button ${dialog.danger ? 'danger solid' : 'primary'}`} disabled={busy} onClick={async () => { if (await dialog.action()) setDialog(null); }}>{busy ? '처리 중…' : dialog.button}</button></div></Modal> : null}
     {dialog?.type === 'install' ? <Modal title="Budget Manager를 홈 화면에 추가하기" close={() => setDialog(null)}><div className="install-instructions"><h3>아이폰·아이패드</h3><p>공유 메뉴 → <strong>홈 화면에 추가</strong></p><h3>안드로이드</h3><p>브라우저 메뉴 → <strong>앱 설치</strong> 또는 <strong>홈 화면에 추가</strong></p></div><button className="button primary full" onClick={() => setDialog(null)}>확인했어요</button></Modal> : null}
   </div>;
 }

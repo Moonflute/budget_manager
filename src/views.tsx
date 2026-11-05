@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowUpRight, Check, CircleHelp, Download, FolderOpen, History, Pencil, Plus, ShieldCheck, Smartphone, Target, CalendarDays } from 'lucide-react';
+import { ArrowUpRight, Check, CircleHelp, Download, FileSpreadsheet, FolderOpen, History, Pencil, Plus, ShieldCheck, Smartphone, Target, CalendarDays } from 'lucide-react';
 import { AddButton, Empty, SectionTitle, TrendChart, assetIcons, flowIcons } from './components';
+import { ImportedExpenseHistory } from './ExpenseImport';
 import type { Entry, EntryMode } from './entryInput';
 import { assetLabels, flowLabels, investmentProductLabels, investmentAccountLabels, balances, flowsForMonth, monthlyFlow, project, money, compactMoney, monthLabel, currentMonth, type AssetKind, type BudgetData, type ProjectionPoint } from './model';
 
-export type Page = 'overview' | 'assets' | 'budget' | 'forecast' | 'records';
 export interface ViewProps {
   data: BudgetData;
   add: (mode: EntryMode, kind?: string) => void;
@@ -14,7 +14,7 @@ export interface ViewProps {
 export function Assets({ data, add, edit }: ViewProps) {
   const b = balances(data.assets);
   return <>
-    <div className="page-intro"><div><h1>나의 자산</h1></div><AddButton onClick={() => add('asset')}>자산 추가</AddButton></div>
+    <div className="panel-actions"><AddButton onClick={() => add('asset')}>자산 추가</AddButton></div>
     <div className="balance-strip"><div><span>총자산</span><strong>{money(b.total)}</strong></div><span className="math-sign">−</span><div><span>총부채</span><strong>{money(b.debt)}</strong></div><span className="math-sign">=</span><div><span>순자산</span><strong className="accent">{money(b.net)}</strong></div></div>
     <div className="two-column">{(Object.keys(assetLabels) as AssetKind[]).map(kind => {
       const Icon = assetIcons[kind];
@@ -46,7 +46,7 @@ export function Assets({ data, add, edit }: ViewProps) {
   </>;
 }
 
-export function Budget({ data, add, edit }: ViewProps) {
+export function Budget({ data, add, edit, onImportExpenses }: ViewProps & { onImportExpenses: () => void }) {
   const month = currentMonth();
   const recurringIncome = monthlyFlow(data).income;
   const f = monthlyFlow({ assets: data.assets, flows: flowsForMonth(data, month) });
@@ -56,9 +56,13 @@ export function Budget({ data, add, edit }: ViewProps) {
     return asset.kind === 'investment' && amount > 0 ? [{ asset, amount }] : [];
   });
   return <>
-    <div className="page-intro"><div><h1>월 예산</h1></div><AddButton onClick={() => add('flow')}>예산 항목 추가</AddButton></div>
+    <div className="panel-actions">
+      <button type="button" className="button secondary" onClick={onImportExpenses}><FileSpreadsheet size={16} aria-hidden="true" />엑셀 지출 가져오기</button>
+      <AddButton onClick={() => add('flow')}>예산 항목 추가</AddButton>
+    </div>
     <div className={`budget-equation ${f.cash < 0 ? 'over-budget' : ''}`}><div><span>이번 달 수입</span><strong>{compactMoney(f.income)}원</strong></div><span>−</span><div><span>생활 지출</span><strong>{compactMoney(f.expense)}원</strong></div><span>−</span><div><span>저축·투자</span><strong>{compactMoney(f.saving + f.investment)}원</strong></div><span>=</span><div><span>남는 현금</span><strong>{compactMoney(f.cash)}원</strong></div></div>
     {f.cash < 0 ? <div className="warning-note">월 배분 초과 {money(-f.cash)} · 기존 현금에서 충당</div> : null}
+    <ImportedExpenseHistory expenses={data.importedExpenses ?? []} />
     <div className="two-column">{(['income', 'irregular-income', 'expense', 'saving', 'investment'] as const).map(kind => {
       if (kind === 'irregular-income') {
         return (
@@ -128,7 +132,7 @@ export function Forecast({ data, add, edit, saveAssumptions, busy }: ViewProps &
   const goalPoint = scenario.find(p => p.net >= data.assumptions.target);
   const upcoming = data.events.filter(e => e.month > currentMonth()).sort((a, b) => a.month.localeCompare(b.month));
   return <>
-    <div className="page-intro"><div><h1>자산 예측</h1></div><div className="segmented" aria-label="예측 기간">{[1, 3, 5, 10].map(y => <button aria-pressed={years === y} className={years === y ? 'active' : ''} key={y} onClick={() => setYears(y)}>{y}년</button>)}</div></div>
+    <div className="panel-actions"><div className="segmented" aria-label="예측 기간">{[1, 3, 5, 10].map(y => <button aria-pressed={years === y} className={years === y ? 'active' : ''} key={y} onClick={() => setYears(y)}>{y}년</button>)}</div></div>
     <div className="forecast-layout"><section className="panel forecast-main"><div className="chart-heading"><div><span>{years}년 뒤 예상 순자산</span><strong>{money(last.net)}</strong></div>{modified ? <span className="comparison-chip">기존보다 {last.net >= baseline.at(-1)!.net ? '+' : ''}{compactMoney(last.net - baseline.at(-1)!.net)}원</span> : <span className="chip">현재 계획</span>}</div><div className="chart-legends"><span className="legend"><i className="dot" />{modified ? '바꾼 계획' : '현재 계획'}</span>{modified ? <span className="legend muted"><i className="dash" />기존 계획</span> : null}</div><TrendChart points={baseline} comparison={modified ? scenario : undefined} detailed /><div className="forecast-result"><Target size={21} /><div><strong>{goalPoint ? goalPoint.step === 0 ? '목표 달성' : `${monthLabel(goalPoint.month)}, 목표 달성 예상` : `${years}년 후 목표까지 ${money(Math.max(0, data.assumptions.target - last.net))}`}</strong><p>순자산 목표 {money(data.assumptions.target)} · 현재 가정 기준</p></div></div>{firstShortfall ? <div className="warning-note">{firstShortfall.step === 0 ? '현재' : monthLabel(firstShortfall.month)}부터 현금 부족 · 자동 대출 없음</div> : null}</section>
       <section className="panel scenario-panel"><h2>시나리오</h2><p className="panel-description">비교용 · 월 예산에 저장되지 않음</p><label className="slider-label"><span>월 생활비 줄이기<strong>{reduction}만 원</strong></span><input type="range" min="0" max={Math.floor(flow.expense / 10_000)} step="1" value={Math.min(reduction, Math.floor(flow.expense / 10_000))} onChange={e => setReduction(Number(e.target.value))} /><small>절감액은 현금에 남음</small></label><label className="slider-label"><span>월 투자 늘리기<strong>{extra}만 원</strong></span><input type="range" min="0" max="200" step="5" value={extra} onChange={e => setExtra(Number(e.target.value))} /><small>추가액은 현금에서 이동</small></label><label className="slider-label"><span>투자 연수익률 가정<strong>{rate}%</strong></span><input type="range" min="-30" max="30" step="0.5" value={rate} onChange={e => setRate(Number(e.target.value))} /></label><button className="button secondary full" onClick={() => { setReduction(0); setExtra(0); setRate(data.assumptions.investmentRate); }}>현재 계획으로 되돌리기</button></section></div>
     <div className="two-column"><section className="panel"><SectionTitle title="기본 가정과 목표" /><AssumptionsForm key={JSON.stringify(data.assumptions)} data={data} save={saveAssumptions} busy={busy} /><p className="fine-print">다음 달부터 월 단위 계산 · 연수익률 월 복리 · 월말 납입 · 부채 고정. 세금·수수료·물가·대출 이자·상환 미반영.</p></section><section className="panel"><SectionTitle title="예정 수입·지출" action={<button className="icon-button" aria-label="예정 항목 추가" onClick={() => add('event')}><Plus size={20} /></button>} />{upcoming.length ? <div className="entry-list">{upcoming.map(e => <button className="entry-row event-row" key={e.id} onClick={() => edit('event', e)}><span><b>{e.name}</b><small>{monthLabel(e.month)}</small></span><strong className={e.kind === 'income' ? 'accent' : ''}>{e.kind === 'income' ? '+' : '−'}{compactMoney(e.amount)}원</strong><Pencil size={14} /></button>)}</div> : <Empty icon={<CalendarDays size={26} />} title="예정 항목 없음" description="해당 월에 1회 반영" action={<button className="button secondary" onClick={() => add('event')}>예정 항목 추가</button>} />}</section></div>
@@ -147,7 +151,7 @@ export function Records({ data, snapshot, backup, restore, persist, persistence,
   const history = [...data.history].sort((a, b) => a.month.localeCompare(b.month));
   const points: ProjectionPoint[] = history.map((h, step) => ({ ...h, step, total: h.cash + h.savings + h.investment, net: h.cash + h.savings + h.investment - h.debt }));
   return <>
-    <div className="page-intro"><div><h1>기록과 백업</h1></div><button className="button primary" disabled={busy} onClick={snapshot}><Plus size={17} />이번 달 기록</button></div>
+    <div className="panel-actions"><button className="button primary" disabled={busy} onClick={snapshot}><Plus size={17} />이번 달 기록</button></div>
     <section className="panel backup-panel">
       <SectionTitle title="JSON 백업" action={<span className="chip">최근 백업 {data.lastBackupAt ? new Date(data.lastBackupAt).toLocaleDateString('ko-KR') : '없음'}</span>} />
       <div className="button-pair">
