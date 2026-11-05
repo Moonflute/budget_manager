@@ -14,7 +14,7 @@ test('device records survive reload, backup/restore, and offline launch', async 
   await page.getByLabel('1행 항목 이름', { exact: true }).fill('테스트 통장');
   await page.getByLabel('1행 현재 잔액', { exact: true }).fill('1000');
   await page.getByRole('button', { name: '저장하기', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: '나의 자산' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '항목 입력', exact: true })).toHaveCount(0);
   await page.reload();
   await openPanel(page, '나의 자산');
   await expect(page.getByRole('button', { name: /테스트 통장/ })).toBeVisible();
@@ -25,7 +25,7 @@ test('device records survive reload, backup/restore, and offline launch', async 
     await page.getByLabel('1행 항목 이름', { exact: true }).fill(item.name);
     await page.getByLabel('1행 매달 금액', { exact: true }).fill(item.amount);
     await page.getByRole('button', { name: '저장하기', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: '월 예산' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: '항목 입력', exact: true })).toHaveCount(0);
   }
   await expect(page.locator('.budget-equation')).toContainText('20만원');
   await openPanel(page, '자산 예측');
@@ -45,7 +45,7 @@ test('device records survive reload, backup/restore, and offline launch', async 
   await page.getByRole('button', { name: '오류 알림 닫기' }).click();
   await page.getByLabel('백업 파일 선택').setInputFiles(path!);
   await page.getByRole('button', { name: '백업으로 교체', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: '기록과 백업' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '백업에서 기록을 불러올까요?', exact: true })).toHaveCount(0);
   await openPanel(page, '나의 자산');
   await expect(page.getByRole('button', { name: /테스트 통장/ })).toBeVisible();
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
