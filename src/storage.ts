@@ -8,7 +8,7 @@ function database(): Promise<IDBDatabase> {
       const request = indexedDB.open('moa-budget-manager', 1);
       request.onupgradeneeded = () => request.result.createObjectStore('budget');
       request.onerror = () => reject(new Error('기기 저장소를 열 수 없어요. 브라우저의 저장 권한을 확인해 주세요.'));
-      request.onblocked = () => reject(new Error('다른 모아 창을 닫고 다시 열어 주세요.'));
+      request.onblocked = () => reject(new Error('다른 Budget Manager 창을 닫고 다시 열어 주세요.'));
       request.onsuccess = () => {
         request.result.onversionchange = () => { request.result.close(); dbPromise = undefined; };
         resolve(request.result);

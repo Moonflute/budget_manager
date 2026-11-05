@@ -1,22 +1,24 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: '/budget_manager/',
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['icon.svg', 'icons/*.png'],
       manifest: {
         id: '/budget_manager/',
-        name: '모아 · 개인 예산 관리',
-        short_name: '모아',
-        description: '나의 돈, 앞으로의 가능성. 기기에 저장하는 개인 예산 관리.',
+        name: 'Budget Manager',
+        short_name: 'Budget Manager',
+        description: '기기에 저장하는 개인 예산 관리 앱.',
         lang: 'ko',
-        theme_color: '#174c3c',
-        background_color: '#f5f6f2',
+        theme_color: '#2257a5',
+        background_color: '#f4f7fc',
         display: 'standalone',
         start_url: '/budget_manager/',
         scope: '/budget_manager/',

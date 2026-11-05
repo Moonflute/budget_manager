@@ -15,7 +15,7 @@ function plan() {
 describe('financial projection', () => {
   it('counts contributions as transfers and retains 1.2 million net gain', () => {
     const data = plan();
-    expect(monthlyFlow(data.flows)).toMatchObject({ cash: 200_000, surplus: 1_200_000 });
+    expect(monthlyFlow(data)).toMatchObject({ cash: 200_000, surplus: 1_200_000 });
     expect(project(data, 1, {}, '2026-12')[1]).toMatchObject({ month: '2027-01', cash: 10_200_000, savings: 700_000, investment: 300_000, net: 11_200_000 });
     expect(project(data, 12, {}, '2026-12')[12].net).toBe(24_400_000);
   });
