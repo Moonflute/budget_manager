@@ -104,7 +104,6 @@ function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>) 
     animation: false,
     tooltip: {
       trigger: 'item',
-      triggerOn: 'mousemove|click',
       renderMode: 'richText',
       confine: true,
       formatter: params => {

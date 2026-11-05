@@ -23,7 +23,7 @@ export function amountInWon(value: string, min = 0): number | null {
   return Math.round(amount * 10_000);
 }
 
-export function prepareEntry(mode: EntryMode, kind: string, input: EntryInput, id = uid()): PreparedEntry {
+export function prepareEntry(mode: EntryMode, kind: string, input: EntryInput, id: string = uid()): PreparedEntry {
   const name = input.name.trim();
   if (!name || name.length > 40) throw new Error('항목 이름을 1~40자로 입력해 주세요.');
   const amount = amountInWon(input.value);
