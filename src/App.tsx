@@ -6,7 +6,7 @@ import { EntrySheet, entryCategory, type EntryCategory } from './EntrySheet';
 import { ExpenseImport } from './ExpenseImport';
 import type { Entry, EntryMode, PreparedEntry } from './entryInput';
 import { Assets, Budget, Forecast, Records, type ViewProps } from './views';
-import { MonthlySankey } from './MonthlySankey';
+import { HomeOverview } from './HomeOverview';
 import { balances, currentMonth, emptyData, makeBackup, maxBackupBytes, money, parseBackup, takeSnapshot, type BudgetData, type ImportedExpense } from './model';
 import { readData, writeData } from './storage';
 
@@ -198,7 +198,7 @@ export default function App() {
         </div>
       </header>
       {!panel && !dialog ? alert : null}
-      <main id="main" className="main-content"><MonthlySankey data={data} month={month} changeMonth={setMonth} /></main>
+      <main id="main" className="main-content"><HomeOverview data={data} month={month} changeMonth={setMonth} addAsset={() => add('asset', 'cash')} /></main>
     </div>
     {!panel ? status : null}
     {(needRefresh || offlineReady) ? <div className="pwa-notice" role="status"><div><strong>{needRefresh ? '새로운 Budget Manager가 준비됐어요' : '오프라인 준비 완료'}</strong></div>{needRefresh ? <button className="button small primary" disabled={busy || !!dialog || !!panel} onClick={() => updateServiceWorker(true)}>업데이트</button> : <button className="icon-button" aria-label="오프라인 안내 닫기" onClick={() => setOfflineReady(false)}><X size={18} /></button>}</div> : null}

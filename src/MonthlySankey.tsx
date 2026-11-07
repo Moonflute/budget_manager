@@ -156,8 +156,13 @@ function monthlySankey({ flows, assets }: Pick<BudgetData, 'flows' | 'assets'>, 
   return { option, description, income: flow.income, deficit, minHeight: Math.max(340, Math.max(sources.length, destinations.length) * 52 + 48) };
 }
 
-export function MonthlySankey({ data, month, changeMonth }: { data: BudgetData; month: string; changeMonth: (month: string) => void }) {
-  const [basis, setBasis] = useState<'plan' | 'recorded'>('recorded');
+export function MonthlySankey({ data, month, changeMonth, basis, changeBasis }: {
+  data: BudgetData;
+  month: string;
+  changeMonth: (month: string) => void;
+  basis: 'plan' | 'recorded';
+  changeBasis: (basis: 'plan' | 'recorded') => void;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<ChartSize>({ width: 320, height: 360 });
   useEffect(() => {
@@ -193,8 +198,8 @@ export function MonthlySankey({ data, month, changeMonth }: { data: BudgetData; 
         <MonthControl month={month} change={changeMonth} />
         <div className="flow-basis">
           {hasRecords ? <div className="flow-view-toggle" role="group" aria-label="지출 표시 기준">
-            <button type="button" aria-pressed={!recorded} onClick={() => setBasis('plan')}>계획</button>
-            <button type="button" aria-pressed={recorded} onClick={() => setBasis('recorded')}>지출 기록</button>
+            <button type="button" aria-pressed={!recorded} onClick={() => changeBasis('plan')}>계획</button>
+            <button type="button" aria-pressed={recorded} onClick={() => changeBasis('recorded')}>지출 기록</button>
           </div> : <span>{example ? '예시' : '계획'}</span>}
           {recorded ? <small>수입·저축·투자·상환은 계획 기준</small> : null}
         </div>

@@ -53,6 +53,51 @@
   white-space: nowrap;
 }
 
+.home-chart-switch {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  width: fit-content;
+  margin: 0 auto 12px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+.home-chart-switch button {
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.home-chart-switch button[aria-pressed="true"] { background: var(--surface); color: var(--primary); }
+.asset-allocation { max-width: 520px; margin: 0 auto; }
+.allocation-caption { display: flex; justify-content: center; align-items: center; gap: 12px; min-height: 35px; font-size: 12px; color: var(--muted); }
+.allocation-caption .text-button { min-height: 32px; font-size: 12px; }
+.allocation-donut { position: relative; width: 100%; max-width: 340px; aspect-ratio: 1; margin: 0 auto; }
+.allocation-canvas { position: absolute; inset: 0; }
+.allocation-center { position: absolute; inset: 23%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; text-align: center; pointer-events: none; }
+.allocation-center > span { max-width: 100%; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.allocation-center > span:first-child { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.allocation-center > strong { font-size: clamp(20px, 7vw, 28px); line-height: 1.2; letter-spacing: -0.8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.allocation-center small { margin-left: 3px; font-size: 13px; font-weight: 400; }
+.allocation-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 0 0 16px; padding: 8px 0 20px; text-align: center; border-bottom: 1px solid var(--border); }
+.allocation-totals dt { margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+.allocation-totals dd { margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.allocation-items { list-style: none; margin: 0; padding: 0; }
+.allocation-items button { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 60px; padding: 10px 8px; border-radius: 8px; text-align: left; }
+.allocation-items button[aria-pressed="true"] { background: var(--surface-active); }
+.allocation-swatch { width: 8px; height: 8px; border-radius: 50%; }
+.allocation-name, .allocation-value { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.allocation-name strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.allocation-name small, .allocation-value small { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.allocation-value { text-align: right; font-variant-numeric: tabular-nums; }
+.allocation-value strong { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.allocation-empty { padding: 12px 0; text-align: center; font-size: 13px; color: var(--muted); }
+.allocation-empty p { margin-bottom: 12px; }
+
 .month-control {
   display: flex;
   align-items: center;
